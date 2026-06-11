@@ -1,0 +1,268 @@
+name: Sync patched main and releases
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Specific upstream tag to patch, for example v6.9.9. Leave empty for latest.'
+        required: false
+        type: string
+      force_sync:
+        description: 'Force-update patched-main even when the generated tree is unchanged.'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: sync-patched-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+
+env:
+  UPSTREAM_REPO: https://github.com/router-for-me/CLIProxyAPI.git
+  PATCH_SOURCE_BRANCH: patched
+  GENERATED_BRANCH: patched-main
+  FORCE_SYNC: ${{ github.event_name == 'workflow_dispatch' && inputs.force_sync || false }}
+  MANUAL_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
+
+jobs:
+  sync-patched-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate workflow token
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_PAT" ]; then
+            echo "::error::Missing required secret GH_PAT"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Configure git
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream and fork refs
+        run: |
+          set -euo pipefail
+          git remote add upstream "$UPSTREAM_REPO" 2>/dev/null || git remote set-url upstream "$UPSTREAM_REPO"
+          git fetch upstream main --tags --force
+          git fetch origin "+refs/heads/${PATCH_SOURCE_BRANCH}:refs/remotes/origin/${PATCH_SOURCE_BRANCH}"
+          git fetch origin "+refs/heads/${GENERATED_BRANCH}:refs/remotes/origin/${GENERATED_BRANCH}" || true
+          git fetch origin --tags --force
+
+      - name: Generate patched-main
+        id: patched-main
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+
+          create_issue_once() {
+            local title="$1"
+            local body="$2"
+            local existing_issue
+
+            existing_issue="$({
+              gh issue list --state open --json number,title \
+                | python3 -c 'import json, sys; title = sys.argv[1]; print(next((str(issue["number"]) for issue in json.load(sys.stdin) if issue["title"] == title), ""))' "$title"
+            } 2>/dev/null || true)"
+
+            if [ -n "$existing_issue" ]; then
+              gh issue comment "$existing_issue" --body "$body" || true
+              echo "Open issue already exists for: $title (#$existing_issue)"
+              return 0
+            fi
+
+            gh issue create --title "$title" --body "$body" --label conflict --label automated \
+              || gh issue create --title "$title" --body "$body" \
+              || echo "Failed to create issue"
+          }
+
+          close_issue_by_title() {
+            local title="$1"
+            gh issue list --state open --json number,title \
+              | python3 -c 'import json, sys; title = sys.argv[1]; [print(issue["number"]) for issue in json.load(sys.stdin) if issue["title"] == title]' "$title" 2>/dev/null \
+              | while read -r number; do
+                  gh issue close "$number" --comment "Conflict resolved by sync-patched-release workflow." || true
+                done
+          }
+
+          if ! git rev-parse "origin/${PATCH_SOURCE_BRANCH}" >/dev/null 2>&1; then
+            echo "::error::Missing origin/${PATCH_SOURCE_BRANCH}. Create the patch source branch before running this workflow."
+            exit 1
+          fi
+
+          base="$(git merge-base upstream/main "origin/${PATCH_SOURCE_BRANCH}")"
+          git checkout -B "${GENERATED_BRANCH}" "origin/${PATCH_SOURCE_BRANCH}"
+
+          if ! git rebase --onto upstream/main "$base" "${GENERATED_BRANCH}"; then
+            git rebase --abort || true
+            issue_title="[sync-conflict] ${PATCH_SOURCE_BRANCH} cannot rebase onto upstream/main"
+            issue_body="$(cat <<EOF
+          ## Sync Conflict
+
+          **Source**: \`origin/${PATCH_SOURCE_BRANCH}\`
+          **Generated branch**: \`${GENERATED_BRANCH}\`
+          **Target base**: \`upstream/main\`
+          **Detected by**: sync-patched-release workflow
+
+          The workflow does not rewrite \`${PATCH_SOURCE_BRANCH}\`. Resolve the patch source manually, then rerun the workflow.
+
+          \`\`\`bash
+          git fetch origin upstream --tags
+          git checkout ${PATCH_SOURCE_BRANCH}
+          git rebase upstream/main
+          # Resolve conflicts, then update ${PATCH_SOURCE_BRANCH} intentionally.
+          \`\`\`
+          EOF
+          )"
+            create_issue_once "$issue_title" "$issue_body"
+            exit 1
+          fi
+
+          issue_title="[sync-conflict] ${PATCH_SOURCE_BRANCH} cannot rebase onto upstream/main"
+          close_issue_by_title "$issue_title"
+
+          should_push=false
+          if [ "$FORCE_SYNC" = "true" ]; then
+            should_push=true
+          elif ! git rev-parse "origin/${GENERATED_BRANCH}" >/dev/null 2>&1; then
+            should_push=true
+          elif ! git merge-base --is-ancestor upstream/main "origin/${GENERATED_BRANCH}"; then
+            should_push=true
+          elif [ "$(git rev-parse "origin/${GENERATED_BRANCH}^{tree}")" != "$(git rev-parse "${GENERATED_BRANCH}^{tree}")" ]; then
+            should_push=true
+          fi
+
+          if [ "$should_push" = "true" ]; then
+            git push origin "${GENERATED_BRANCH}" --force-with-lease
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "${GENERATED_BRANCH} is already up to date."
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Detect upstream release tag
+        id: release-tag
+        run: |
+          set -euo pipefail
+
+          if [ -n "$MANUAL_TAG" ]; then
+            tag="$MANUAL_TAG"
+            if ! git rev-parse "$tag" >/dev/null 2>&1; then
+              echo "::error::Tag $tag does not exist in upstream tags."
+              exit 1
+            fi
+          else
+            tag="$(git tag -l 'v*' | grep -v -- '-patched$' | sort -V | tail -n 1 || true)"
+          fi
+
+          if [ -z "$tag" ]; then
+            echo "has_tag=false" >> "$GITHUB_OUTPUT"
+            echo "No upstream release tag found."
+            exit 0
+          fi
+
+          patched_tag="${tag}-patched"
+          if git rev-parse "$patched_tag" >/dev/null 2>&1; then
+            echo "has_tag=false" >> "$GITHUB_OUTPUT"
+            echo "$patched_tag already exists."
+            exit 0
+          fi
+
+          {
+            echo "has_tag=true"
+            echo "tag=$tag"
+            echo "patched_tag=$patched_tag"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create patched release tag
+        if: steps.release-tag.outputs.has_tag == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          TAG: ${{ steps.release-tag.outputs.tag }}
+          PATCHED_TAG: ${{ steps.release-tag.outputs.patched_tag }}
+        run: |
+          set -euo pipefail
+
+          create_issue_once() {
+            local title="$1"
+            local body="$2"
+            local existing_issue
+
+            existing_issue="$({
+              gh issue list --state open --json number,title \
+                | python3 -c 'import json, sys; title = sys.argv[1]; print(next((str(issue["number"]) for issue in json.load(sys.stdin) if issue["title"] == title), ""))' "$title"
+            } 2>/dev/null || true)"
+
+            if [ -n "$existing_issue" ]; then
+              gh issue comment "$existing_issue" --body "$body" || true
+              echo "Open issue already exists for: $title (#$existing_issue)"
+              return 0
+            fi
+
+            gh issue create --title "$title" --body "$body" --label conflict --label automated \
+              || gh issue create --title "$title" --body "$body" \
+              || echo "Failed to create issue"
+          }
+
+          close_issue_by_title() {
+            local title="$1"
+            gh issue list --state open --json number,title \
+              | python3 -c 'import json, sys; title = sys.argv[1]; [print(issue["number"]) for issue in json.load(sys.stdin) if issue["title"] == title]' "$title" 2>/dev/null \
+              | while read -r number; do
+                  gh issue close "$number" --comment "Patched release conflict resolved by sync-patched-release workflow." || true
+                done
+          }
+
+          base="$(git merge-base "$TAG" "origin/${PATCH_SOURCE_BRANCH}")"
+          work_branch="tmp-${PATCHED_TAG}"
+          git checkout -B "$work_branch" "origin/${PATCH_SOURCE_BRANCH}"
+
+          if ! git rebase --onto "$TAG" "$base" "$work_branch"; then
+            git rebase --abort || true
+            issue_title="[patched-release-conflict] ${PATCH_SOURCE_BRANCH} conflicts with ${TAG}"
+            issue_body="$(cat <<EOF
+          ## Patched Release Conflict
+
+          **Source**: \`origin/${PATCH_SOURCE_BRANCH}\`
+          **Upstream tag**: \`${TAG}\`
+          **Target tag**: \`${PATCHED_TAG}\`
+          **Detected by**: sync-patched-release workflow
+
+          The workflow did not create or move \`${PATCHED_TAG}\`.
+
+          \`\`\`bash
+          git fetch origin upstream --tags
+          git checkout -B ${work_branch} origin/${PATCH_SOURCE_BRANCH}
+          base=\$(git merge-base ${TAG} origin/${PATCH_SOURCE_BRANCH})
+          git rebase --onto ${TAG} \"\$base\" ${work_branch}
+          # Resolve conflicts, then:
+          git tag ${PATCHED_TAG}
+          git push origin ${PATCHED_TAG}
+          \`\`\`
+          EOF
+          )"
+            create_issue_once "$issue_title" "$issue_body"
+            exit 1
+          fi
+
+          git tag "$PATCHED_TAG"
+          git push origin "$PATCHED_TAG"
+
+          issue_title="[patched-release-conflict] ${PATCH_SOURCE_BRANCH} conflicts with ${TAG}"
+          close_issue_by_title "$issue_title"
