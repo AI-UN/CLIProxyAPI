@@ -8,6 +8,18 @@
 
 您可以使用本地或多账户的CLI方式，通过任何与 OpenAI（包括Responses）/Gemini/Claude 兼容的客户端和SDK进行访问。
 
+## 关于此 Fork
+
+此 Fork 会跟踪上游 CLIProxyAPI，同时把本地补丁和发布自动化与上游开发分离。
+
+- `patched` 是人工维护的补丁源分支，用于保存此 Fork 的专属改动。
+- `patched-main` 是由 GitHub Actions 自动生成的分支，内容来自上游 `main` 加补丁源，可能被自动 force push。
+- `v*-patched` 标签由上游发布标签加此 Fork 的补丁生成，并触发此 Fork 的发布流程。
+- Release 产物和容器镜像由此 Fork 发布。Docker 镜像会推送到 `ghcr.io/<owner>/cli-proxy-api`。
+- 人工功能开发必须使用普通工作分支，例如 `fix/*`、`feature/*`、`refactor/*` 或 `ci/*`。
+
+重要：不要手动向 `patched-main`、`rebased/*` 等自动化分支提交代码。这些分支是自动化流程的可丢弃输出，可能被覆盖，也可能在不保留手动提交的情况下被 force push。
+
 ## 赞助商
 
 [![https://www.packyapi.com/register?aff=cliproxyapi](./assets/packycode-cn.png)](https://www.packyapi.com/register?aff=cliproxyapi)
