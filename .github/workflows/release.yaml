@@ -1,10 +1,10 @@
-name: release
+name: Release
 
 on:
   push:
-    # run only against tags
+    # run only against patched tags
     tags:
-      - '*'
+      - 'v*-patched'
 
 permissions:
   contents: write
