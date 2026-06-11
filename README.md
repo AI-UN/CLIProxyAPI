@@ -8,6 +8,18 @@ It now also supports OpenAI Codex (GPT models) and Claude Code via OAuth.
 
 So you can use local or multi-account CLI access with OpenAI(include Responses)/Gemini/Claude-compatible clients and SDKs.
 
+## About This Fork
+
+This fork tracks upstream CLIProxyAPI while keeping local patches and release automation separate from upstream development.
+
+- `patched` is the manually maintained patch source branch for fork-specific changes.
+- `patched-main` is an automated branch generated from upstream `main` plus the patch source. It may be force-pushed by GitHub Actions.
+- `v*-patched` tags are generated from upstream release tags plus the fork patches and trigger fork releases.
+- Release assets and container images are published from this fork. Docker images are pushed to GHCR under `ghcr.io/<owner>/cli-proxy-api`.
+- Manual feature work must use normal working branches such as `fix/*`, `feature/*`, `refactor/*`, or `ci/*`.
+
+Important: do not commit manually to automated branches such as `patched-main` or `rebased/*`. These branches are disposable outputs of automation, can be overwritten, and may be force-pushed without preserving manual commits.
+
 ## Sponsor
 
 [![https://www.packyapi.com/register?aff=cliproxyapi](./assets/packycode-en.png)](https://www.packyapi.com/register?aff=cliproxyapi)
