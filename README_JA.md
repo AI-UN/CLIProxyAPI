@@ -37,6 +37,18 @@ CLIProxyAPI は、CLI向けのOpenAI/Gemini/Claude/Codex/Grok互換APIインタ�
 </tbody>
 </table>
 
+## このForkについて
+
+このForkは上流のCLIProxyAPIを追跡しつつ、ローカルパッチとリリース自動化を上流開発から分離しています。
+
+- `patched` は、このFork固有の変更を保持する手動管理のパッチ元ブランチです。
+- `patched-main` は、上流の `main` にパッチ元を適用してGitHub Actionsが生成する自動化ブランチです。自動的にforce pushされる場合があります。
+- `v*-patched` タグは、上流リリースタグにForkのパッチを適用して生成され、このForkのリリースを起動します。
+- ReleaseアセットとコンテナイメージはこのForkから公開されます。Dockerイメージは `ghcr.io/<owner>/cli-proxy-api` にpushされます。
+- 手動の機能開発は、`fix/*`、`feature/*`、`refactor/*`、`ci/*` などの通常の作業ブランチで行ってください。
+
+重要: `patched-main` や `rebased/*` などの自動化ブランチへ手動でコミットしないでください。これらのブランチは自動化の使い捨て出力であり、上書きされたり、手動コミットを保持せずにforce pushされたりする可能性があります。
+
 ## スポンサー
 
 [![https://www.packyapi.com/register?aff=cliproxyapi](./assets/packycode-en.png)](https://www.packyapi.com/register?aff=cliproxyapi)
