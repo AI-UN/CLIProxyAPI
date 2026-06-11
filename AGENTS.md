@@ -5,6 +5,14 @@ Go 1.26+ proxy server providing OpenAI/Gemini/Claude/Codex compatible APIs with 
 ## Repository
 - GitHub: https://github.com/router-for-me/CLIProxyAPI
 
+## Fork Branch Policy
+- Treat `patched-main`, `rebased/*`, and generated `v*-patched` release tags as automation outputs. Do not make manual code changes on those branches or tags.
+- `patched-main` may be force-pushed by GitHub Actions. Never rely on it to preserve manual commits.
+- Keep fork-specific patch source changes on `patched` or merge them there intentionally after review.
+- Implement new features, fixes, refactors, and CI changes on normal working branches such as `feature/*`, `fix/*`, `refactor/*`, or `ci/*`.
+- If the current branch is an automated branch, stop before editing code and switch to or create an appropriate working branch.
+- AI agents must not modify automated branches to implement requested code changes. They must use a working branch and keep automated branches as generated outputs only.
+
 ## Commands
 ```bash
 gofmt -w . # Format (required after Go changes)
