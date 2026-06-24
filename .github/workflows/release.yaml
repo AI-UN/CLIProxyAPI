@@ -21,6 +21,15 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+      - name: Find previous patched tag
+        id: prev_tag
+        run: |
+          set -euo pipefail
+          current_tag="$GITHUB_REF_NAME"
+          prev_tag="$(git tag -l 'v*-patched' --sort=-version:refname | grep -A1 -F "$current_tag" | sed -n '2p')"
+          if [[ -n "$prev_tag" && "$prev_tag" != "$current_tag" ]]; then
+            echo "tag=$prev_tag" >> "$GITHUB_OUTPUT"
+          fi
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -59,8 +68,12 @@ jobs:
           git log --reverse --pretty=format:'- %s (%h)' "$changelog_range" |
             grep -Ev '^- (docs:|test:)' > "$changelog_entries_file" || true
 
+          generate_notes_args=(-f tag_name="$GITHUB_REF_NAME")
+          if [[ -n "${{ steps.prev_tag.outputs.tag }}" ]]; then
+            generate_notes_args+=(-f previous_tag_name="${{ steps.prev_tag.outputs.tag }}")
+          fi
           gh api "repos/${GH_REPO}/releases/generate-notes" \
-            -f tag_name="$GITHUB_REF_NAME" \
+            "${generate_notes_args[@]}" \
             --jq .body > "$generated_notes_file"
           if [[ ! -s "$generated_notes_file" ]]; then
             if [[ -n "$previous_tag" ]]; then
