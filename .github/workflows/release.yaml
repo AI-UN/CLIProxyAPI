@@ -17,6 +17,20 @@ jobs:
   prepare-release:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Fetch tags
+        run: git fetch --force --tags
+      - name: Find previous patched tag
+        id: prev_tag
+        run: |
+          set -euo pipefail
+          current_tag="$GITHUB_REF_NAME"
+          prev_tag="$(git tag -l 'v*-patched' --sort=-version:refname | grep -A1 -F "$current_tag" | sed -n '2p')"
+          if [[ -n "$prev_tag" && "$prev_tag" != "$current_tag" ]]; then
+            echo "tag=$prev_tag" >> "$GITHUB_OUTPUT"
+          fi
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -40,7 +54,12 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release edit "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME"
           else
-            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+            api_args=(-f tag_name="$GITHUB_REF_NAME" -f name="$GITHUB_REF_NAME")
+            if [[ -n "${{ steps.prev_tag.outputs.tag }}" ]]; then
+              api_args+=(-f previous_tag_name="${{ steps.prev_tag.outputs.tag }}")
+            fi
+            gh api "repos/${GH_REPO}/releases/generate-notes" "${api_args[@]}" -q .body > "$current_notes_file"
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file "$current_notes_file"
           fi
           gh release view "$GITHUB_REF_NAME" --json body -q .body > "$current_notes_file"
           {
