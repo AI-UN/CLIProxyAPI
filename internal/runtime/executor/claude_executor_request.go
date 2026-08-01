@@ -521,6 +521,14 @@ func remapOAuthToolNames(body []byte) ([]byte, map[string]string) {
 			reverseMap[renamed] = original
 		}
 	}
+	preservedTools := helps.NewClaudePreservedToolRegistry(body)
+	renameToolName := func(name string) (string, bool) {
+		if preservedTools[name] {
+			return "", false
+		}
+		newName, ok := oauthToolRenameMap[name]
+		return newName, ok && newName != name
+	}
 
 	// 1. Rewrite tools array in a single pass (if present).
 	// IMPORTANT: do not mutate names first and then rebuild from an older gjson
@@ -531,14 +539,18 @@ func remapOAuthToolNames(body []byte) ([]byte, map[string]string) {
 	toolsNeedRewrite := false
 	if tools.Exists() && tools.IsArray() {
 		tools.ForEach(func(_, tool gjson.Result) bool {
-			if tool.Get("type").Exists() && tool.Get("type").String() != "" {
+			toolType := tool.Get("type").String()
+			if helps.IsClaudePreservedTypedToolType(toolType) {
 				return true
+			}
+			if helps.IsClaudeCustomToolType(toolType) {
+				toolsNeedRewrite = true
+				return false
 			}
 			name := tool.Get("name").String()
 			toolsNeedRewrite = oauthToolsToRemove[name]
 			if !toolsNeedRewrite {
-				newName, ok := oauthToolRenameMap[name]
-				toolsNeedRewrite = ok && newName != name
+				_, toolsNeedRewrite = renameToolName(name)
 			}
 			return !toolsNeedRewrite
 		})
@@ -548,8 +560,8 @@ func remapOAuthToolNames(body []byte) ([]byte, map[string]string) {
 		toolsJSON.WriteByte('[')
 		toolCount := 0
 		tools.ForEach(func(_, tool gjson.Result) bool {
-			// Keep Anthropic built-in tools (web_search, code_execution, etc.) unchanged.
-			if tool.Get("type").Exists() && tool.Get("type").String() != "" {
+			toolType := tool.Get("type").String()
+			if helps.IsClaudePreservedTypedToolType(toolType) {
 				if toolCount > 0 {
 					toolsJSON.WriteByte(',')
 				}
@@ -564,7 +576,13 @@ func remapOAuthToolNames(body []byte) ([]byte, map[string]string) {
 			}
 
 			toolJSON := tool.Raw
-			if newName, ok := oauthToolRenameMap[name]; ok && newName != name {
+			if helps.IsClaudeCustomToolType(toolType) {
+				updatedTool, err := sjson.Delete(toolJSON, "type")
+				if err == nil {
+					toolJSON = updatedTool
+				}
+			}
+			if newName, ok := renameToolName(name); ok {
 				updatedTool, err := sjson.Set(toolJSON, "name", newName)
 				if err == nil {
 					toolJSON = updatedTool
@@ -587,13 +605,15 @@ func remapOAuthToolNames(body []byte) ([]byte, map[string]string) {
 	toolChoiceType := gjson.GetBytes(body, "tool_choice.type").String()
 	if toolChoiceType == "tool" {
 		tcName := gjson.GetBytes(body, "tool_choice.name").String()
-		if oauthToolsToRemove[tcName] {
-			// The chosen tool was removed from the tools array, so drop tool_choice to
-			// keep the payload internally consistent and fall back to normal auto tool use.
-			body, _ = sjson.DeleteBytes(body, "tool_choice")
-		} else if newName, ok := oauthToolRenameMap[tcName]; ok && newName != tcName {
-			body, _ = sjson.SetBytes(body, "tool_choice.name", newName)
-			recordRename(tcName, newName)
+		if !preservedTools[tcName] {
+			if oauthToolsToRemove[tcName] {
+				// The chosen tool was removed from the tools array, so drop tool_choice to
+				// keep the payload internally consistent and fall back to normal auto tool use.
+				body, _ = sjson.DeleteBytes(body, "tool_choice")
+			} else if newName, ok := renameToolName(tcName); ok {
+				body, _ = sjson.SetBytes(body, "tool_choice.name", newName)
+				recordRename(tcName, newName)
+			}
 		}
 	}
 
@@ -610,14 +630,14 @@ func remapOAuthToolNames(body []byte) ([]byte, map[string]string) {
 				switch partType {
 				case "tool_use":
 					name := part.Get("name").String()
-					if newName, ok := oauthToolRenameMap[name]; ok && newName != name {
+					if newName, ok := renameToolName(name); ok {
 						path := fmt.Sprintf("messages.%d.content.%d.name", msgIndex.Int(), contentIndex.Int())
 						body, _ = sjson.SetBytes(body, path, newName)
 						recordRename(name, newName)
 					}
 				case "tool_reference":
 					toolName := part.Get("tool_name").String()
-					if newName, ok := oauthToolRenameMap[toolName]; ok && newName != toolName {
+					if newName, ok := renameToolName(toolName); ok {
 						path := fmt.Sprintf("messages.%d.content.%d.tool_name", msgIndex.Int(), contentIndex.Int())
 						body, _ = sjson.SetBytes(body, path, newName)
 						recordRename(toolName, newName)
@@ -631,7 +651,7 @@ func remapOAuthToolNames(body []byte) ([]byte, map[string]string) {
 						nestedContent.ForEach(func(nestedIndex, nestedPart gjson.Result) bool {
 							if nestedPart.Get("type").String() == "tool_reference" {
 								nestedToolName := nestedPart.Get("tool_name").String()
-								if newName, ok := oauthToolRenameMap[nestedToolName]; ok && newName != nestedToolName {
+								if newName, ok := renameToolName(nestedToolName); ok {
 									nestedPath := fmt.Sprintf("messages.%d.content.%d.content.%d.tool_name", msgIndex.Int(), contentIndex.Int(), nestedIndex.Int())
 									body, _ = sjson.SetBytes(body, nestedPath, newName)
 									recordRename(nestedToolName, newName)
@@ -739,18 +759,14 @@ func applyClaudeToolPrefix(body []byte, prefix string) []byte {
 		return body
 	}
 
-	// Collect built-in tool names from the authoritative fallback seed list and
-	// augment it with any typed built-ins present in the current request body.
-	builtinTools := helps.AugmentClaudeBuiltinToolRegistry(body, nil)
+	// Preserve known built-in names in history-only requests and any opaque typed
+	// definitions in the current request. Explicit custom declarations override
+	// the fallback names and continue through prefixing.
+	preservedTools := helps.NewClaudePreservedToolRegistry(body)
 
 	if tools := gjson.GetBytes(body, "tools"); tools.Exists() && tools.IsArray() {
 		tools.ForEach(func(index, tool gjson.Result) bool {
-			// Skip built-in tools (web_search, code_execution, etc.) which have
-			// a "type" field and require their name to remain unchanged.
-			if tool.Get("type").Exists() && tool.Get("type").String() != "" {
-				if n := tool.Get("name").String(); n != "" {
-					builtinTools[n] = true
-				}
+			if helps.IsClaudePreservedTypedToolType(tool.Get("type").String()) {
 				return true
 			}
 			name := tool.Get("name").String()
@@ -765,7 +781,7 @@ func applyClaudeToolPrefix(body []byte, prefix string) []byte {
 
 	if gjson.GetBytes(body, "tool_choice.type").String() == "tool" {
 		name := gjson.GetBytes(body, "tool_choice.name").String()
-		if name != "" && !strings.HasPrefix(name, prefix) && !builtinTools[name] {
+		if name != "" && !strings.HasPrefix(name, prefix) && !preservedTools[name] {
 			body, _ = sjson.SetBytes(body, "tool_choice.name", prefix+name)
 		}
 	}
@@ -781,14 +797,14 @@ func applyClaudeToolPrefix(body []byte, prefix string) []byte {
 				switch partType {
 				case "tool_use":
 					name := part.Get("name").String()
-					if name == "" || strings.HasPrefix(name, prefix) || builtinTools[name] {
+					if name == "" || strings.HasPrefix(name, prefix) || preservedTools[name] {
 						return true
 					}
 					path := fmt.Sprintf("messages.%d.content.%d.name", msgIndex.Int(), contentIndex.Int())
 					body, _ = sjson.SetBytes(body, path, prefix+name)
 				case "tool_reference":
 					toolName := part.Get("tool_name").String()
-					if toolName == "" || strings.HasPrefix(toolName, prefix) || builtinTools[toolName] {
+					if toolName == "" || strings.HasPrefix(toolName, prefix) || preservedTools[toolName] {
 						return true
 					}
 					path := fmt.Sprintf("messages.%d.content.%d.tool_name", msgIndex.Int(), contentIndex.Int())
@@ -800,7 +816,7 @@ func applyClaudeToolPrefix(body []byte, prefix string) []byte {
 						nestedContent.ForEach(func(nestedIndex, nestedPart gjson.Result) bool {
 							if nestedPart.Get("type").String() == "tool_reference" {
 								nestedToolName := nestedPart.Get("tool_name").String()
-								if nestedToolName != "" && !strings.HasPrefix(nestedToolName, prefix) && !builtinTools[nestedToolName] {
+								if nestedToolName != "" && !strings.HasPrefix(nestedToolName, prefix) && !preservedTools[nestedToolName] {
 									nestedPath := fmt.Sprintf("messages.%d.content.%d.content.%d.tool_name", msgIndex.Int(), contentIndex.Int(), nestedIndex.Int())
 									body, _ = sjson.SetBytes(body, nestedPath, prefix+nestedToolName)
 								}

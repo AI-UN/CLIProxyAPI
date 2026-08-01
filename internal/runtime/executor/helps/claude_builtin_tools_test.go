@@ -2,8 +2,34 @@ package helps
 
 import "testing"
 
-func TestClaudeBuiltinToolRegistry_DefaultSeedFallback(t *testing.T) {
-	registry := AugmentClaudeBuiltinToolRegistry(nil, nil)
+func TestClaudeToolTypeClassification(t *testing.T) {
+	tests := []struct {
+		name          string
+		toolType      string
+		wantCustom    bool
+		wantPreserved bool
+	}{
+		{name: "empty", toolType: ""},
+		{name: "custom", toolType: "custom", wantCustom: true},
+		{name: "trimmed custom", toolType: " custom ", wantCustom: true},
+		{name: "builtin", toolType: "web_search_20250305", wantPreserved: true},
+		{name: "unknown typed", toolType: "custom_builtin_20250401", wantPreserved: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsClaudeCustomToolType(tt.toolType); got != tt.wantCustom {
+				t.Fatalf("IsClaudeCustomToolType(%q) = %v, want %v", tt.toolType, got, tt.wantCustom)
+			}
+			if got := IsClaudePreservedTypedToolType(tt.toolType); got != tt.wantPreserved {
+				t.Fatalf("IsClaudePreservedTypedToolType(%q) = %v, want %v", tt.toolType, got, tt.wantPreserved)
+			}
+		})
+	}
+}
+
+func TestClaudePreservedToolRegistry_DefaultSeedFallback(t *testing.T) {
+	registry := NewClaudePreservedToolRegistry(nil)
 	for _, name := range defaultClaudeBuiltinToolNames {
 		if !registry[name] {
 			t.Fatalf("default builtin %q missing from fallback registry", name)
@@ -11,22 +37,26 @@ func TestClaudeBuiltinToolRegistry_DefaultSeedFallback(t *testing.T) {
 	}
 }
 
-func TestClaudeBuiltinToolRegistry_AugmentsTypedBuiltinsFromBody(t *testing.T) {
-	registry := AugmentClaudeBuiltinToolRegistry([]byte(`{
+func TestClaudePreservedToolRegistry_DeclarationOverrides(t *testing.T) {
+	registry := NewClaudePreservedToolRegistry([]byte(`{
 		"tools": [
-			{"type": "web_search_20250305", "name": "web_search"},
+			{"type": "custom", "name": "bash"},
+			{"name": "web_search"},
 			{"type": "custom_builtin_20250401", "name": "special_builtin"},
-			{"name": "Read"}
+			{"type": "mcp_toolset", "name": "mcp_toolset"}
 		]
-	}`), nil)
+	}`))
 
-	if !registry["web_search"] {
-		t.Fatal("expected default typed builtin web_search in registry")
+	if registry["bash"] {
+		t.Fatal("expected explicit type=custom declaration to override builtin fallback")
+	}
+	if registry["web_search"] {
+		t.Fatal("expected explicit untyped declaration to override builtin fallback")
 	}
 	if !registry["special_builtin"] {
-		t.Fatal("expected typed builtin from body to be added to registry")
+		t.Fatal("expected unknown typed tool to be preserved")
 	}
-	if registry["Read"] {
-		t.Fatal("expected untyped custom tool to stay out of builtin registry")
+	if !registry["mcp_toolset"] {
+		t.Fatal("expected typed builtin tool to be preserved")
 	}
 }
