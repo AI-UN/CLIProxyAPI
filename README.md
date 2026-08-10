@@ -46,7 +46,8 @@ This fork tracks upstream CLIProxyAPI while keeping local patches and release au
 - `patched-main` is an automated branch generated from upstream `main` plus the patch source. It may be force-pushed by GitHub Actions.
 - `v*-patched` tags are generated from upstream release tags plus the fork patches and trigger fork releases.
 - Release assets and container images are published from this fork. Docker images are pushed to GHCR under `ghcr.io/<owner>/cli-proxy-api`.
-- Manual feature work must use normal working branches such as `fix/*`, `feature/*`, `refactor/*`, or `ci/*`.
+- Fork container images newer than v7.2.100 use `gcr.io/distroless/static-debian13:nonroot` and run as a non-root user. These images are built with CGO disabled and do not support dynamic library plugins.
+- Manual feature work must use normal working branches such as `fix/*`, `feat/*`, `refactor/*`, or `ci/*`.
 
 Important: do not commit manually to automated branches such as `patched-main` or `rebased/*`. These branches are disposable outputs of automation, can be overwritten, and may be force-pushed without preserving manual commits.
 
