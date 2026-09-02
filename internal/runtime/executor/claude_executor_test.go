@@ -5328,6 +5328,61 @@ func TestClaudeExecutor_ExecuteStreamOAuthCustomToolMCPAliasRoundTrip(t *testing
 	}
 }
 
+// TestClaudeExecutor_ExecuteStreamOAuthInventedMCPAliasIsForwarded reproduces the
+// reported deadlock: the model keeps the caller's virtual MCP server and names a
+// tool that was never declared, here a client-side device. The stream must
+// complete with that name forwarded so the client can answer with an unknown
+// tool error, instead of failing the response on every retry.
+func TestClaudeExecutor_ExecuteStreamOAuthInventedMCPAliasIsForwarded(t *testing.T) {
+	invented := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		alias := gjson.GetBytes(body, "tools.0.name").String()
+		parts := strings.SplitN(alias, "__", 3)
+		if len(parts) != 3 {
+			t.Errorf("upstream tool name = %q, want an mcp__ alias", alias)
+			return
+		}
+		invented = "mcp__" + parts[1] + "__inspect_image"
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprintf(w, "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":%q,\"input\":{}}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", invented)
+	}))
+	defer server.Close()
+
+	executor := NewClaudeExecutor(&config.Config{})
+	auth := &cliproxyauth.Auth{
+		ID: "oauth-mcp-stream-invented-alias",
+		Attributes: map[string]string{
+			"api_key":  "sk-ant-oat-mcp-stream-invented-alias",
+			"base_url": server.URL,
+		},
+		Metadata: map[string]any{
+			"account_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+		},
+	}
+	payload := []byte(`{"model":"claude-opus-5","messages":[{"role":"user","content":"look"}],"tools":[{"name":"read","description":"read","input_schema":{"type":"object"}}],"stream":true}`)
+	result, errStream := executor.ExecuteStream(context.Background(), auth, cliproxyexecutor.Request{
+		Model:   "claude-opus-5",
+		Payload: payload,
+	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatClaude})
+	if errStream != nil {
+		t.Fatalf("ExecuteStream() error = %v", errStream)
+	}
+	var downstream bytes.Buffer
+	for chunk := range result.Chunks {
+		if chunk.Err != nil {
+			t.Fatalf("stream chunk error = %v", chunk.Err)
+		}
+		downstream.Write(chunk.Payload)
+	}
+	if invented == "" {
+		t.Fatal("upstream never emitted an invented alias")
+	}
+	if !strings.Contains(downstream.String(), fmt.Sprintf("%q", invented)) {
+		t.Fatalf("downstream did not forward the invented tool name %q: %s", invented, downstream.String())
+	}
+}
+
 func TestPrependClaudeSystemReminders_FollowsToolResultsAndIsIdempotent(t *testing.T) {
 	payload := []byte(`{"messages":[` +
 		`{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Read","input":{}}]},` +
