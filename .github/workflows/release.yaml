@@ -5,6 +5,10 @@ on:
     # run only against patched tags
     tags:
       - 'v*-patched'
+  # Dispatched by sync-patched-release.yml, because a tag it pushes with
+  # GITHUB_TOKEN never fires the `push` trigger above. GITHUB_REF_NAME is the
+  # dispatched tag, so RELEASE_VERSION resolves identically either way.
+  workflow_dispatch:
 
 permissions:
   contents: write
