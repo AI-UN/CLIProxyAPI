@@ -1931,39 +1931,33 @@ func (resolver claudeMCPAliasResolver) resolve(name string) (string, bool) {
 	// is then wrong. Fall through to an unambiguous suffix match so word-level
 	// repeats still resolve to the declared tool.
 	if matchCount == 0 {
-		var suffixMatches []claudeMCPAliasEntry
+		// One pass, no candidate slice: the strictly longest semantic wins, and
+		// an equal-length rival makes the name ambiguous rather than a guess.
+		// With both "_file" and "_read_file" declared, "..._read_file" resolves.
+		longestSemantic := -1
+		suffixMatches := 0
+		tie := false
 		for _, entry := range resolver.aliases {
-			if entry.parts.server == server && strings.HasSuffix(normalizedName, "_"+entry.parts.semantic) {
-				suffixMatches = append(suffixMatches, entry)
+			if entry.parts.server != server || !hasSemanticSuffix(normalizedName, entry.parts.semantic) {
+				continue
+			}
+			suffixMatches++
+			switch semanticLen := len(entry.parts.semantic); {
+			case semanticLen > longestSemantic:
+				longestSemantic = semanticLen
+				matchedOriginal = entry.original
+				tie = false
+			case semanticLen == longestSemantic:
+				tie = true
 			}
 		}
-		if len(suffixMatches) == 1 {
-			matchedOriginal = suffixMatches[0].original
+		if suffixMatches == 1 || (suffixMatches > 1 && !tie) {
 			matchCount = 1
-		} else if len(suffixMatches) > 1 {
-			// If multiple candidates match (e.g. "_file" and "_read_file"),
-			// choose the strictly longest semantic match when unambiguous.
-			longest := suffixMatches[0]
-			tie := false
-			for _, candidate := range suffixMatches[1:] {
-				if len(candidate.parts.semantic) > len(longest.parts.semantic) {
-					longest = candidate
-					tie = false
-				} else if len(candidate.parts.semantic) == len(longest.parts.semantic) {
-					tie = true
-				}
-			}
-			if !tie {
-				matchedOriginal = longest.original
-				matchCount = 1
-			} else {
-				matchCount = len(suffixMatches)
-			}
-		}
-		if matchCount == 1 {
 			// This path guesses instead of failing, so leave a trace: it is the only
 			// way to tell a silent wrong-tool restore from a healthy request.
 			log.Debugf("claude oauth mcp alias: recovered drifted tool name %q as %q via semantic suffix", name, matchedOriginal)
+		} else {
+			matchCount = suffixMatches
 		}
 	}
 	if matchCount == 1 {
@@ -1974,6 +1968,16 @@ func (resolver claudeMCPAliasResolver) resolve(name string) (string, bool) {
 	// and never fail the response over a name this resolver did not issue.
 	log.Warnf("claude oauth mcp alias: forwarding tool name %q unchanged, %d request-local candidates matched", name, matchCount)
 	return "", false
+}
+
+// hasSemanticSuffix reports whether name ends with semantic on an "_" boundary.
+// It answers the same question as strings.HasSuffix(name, "_"+semantic) without
+// building the probe string once per declared alias.
+func hasSemanticSuffix(name, semantic string) bool {
+	if len(name) <= len(semantic) {
+		return false
+	}
+	return name[len(name)-len(semantic)-1] == '_' && strings.HasSuffix(name, semantic)
 }
 
 // reverseRemapOAuthToolNames reverses the tool name mapping for non-stream responses
