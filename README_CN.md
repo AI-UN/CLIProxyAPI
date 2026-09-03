@@ -44,7 +44,7 @@ CLIProxyAPI 是一个为 CLI 提供 OpenAI/Gemini/Claude/Codex/Grok 兼容 API �
 - `patched` 是人工维护的补丁源分支，用于保存此 Fork 的专属改动。
 - `patched-main` 是由 GitHub Actions 自动生成的分支，内容来自上游 `main` 加补丁源，可能被自动 force push。
 - `v*-patched` 标签由上游发布标签加此 Fork 的补丁生成，并触发此 Fork 的发布流程。
-- Release 产物和容器镜像由此 Fork 发布。Docker 镜像会推送到 `ghcr.io/<owner>/cli-proxy-api`。
+- Release 产物和容器镜像由此 Fork 发布。Docker 镜像会推送到 `ghcr.io/ai-un/cli-proxy-api`。
 - 高于 v7.2.100 的 Fork 容器镜像使用 `gcr.io/distroless/static-debian13:nonroot`，并以非 root 用户运行。由于这些镜像采用禁用 CGO 的静态构建，因此不支持动态库插件。
 - 人工功能开发必须使用普通工作分支，例如 `fix/*`、`feat/*`、`refactor/*` 或 `ci/*`。
 
