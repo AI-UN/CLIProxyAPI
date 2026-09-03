@@ -3,7 +3,9 @@
 Go 1.26+ proxy server providing OpenAI/Gemini/Claude/Codex compatible APIs with OAuth and round-robin load balancing.
 
 ## Repository
-- GitHub: https://github.com/router-for-me/CLIProxyAPI
+- Upstream: https://github.com/router-for-me/CLIProxyAPI
+- Fork: https://github.com/AI-UN/CLIProxyAPI
+- Fork container image: `ghcr.io/ai-un/cli-proxy-api` (GHCR requires the lowercase owner)
 
 ## Fork Branch Policy
 - Treat `patched-main`, `rebased/*`, and generated `v*-patched` release tags as automation outputs. Do not make manual code changes on those branches or tags.
