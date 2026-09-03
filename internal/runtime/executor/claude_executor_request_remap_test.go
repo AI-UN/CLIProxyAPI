@@ -2,14 +2,14 @@ package executor
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"maps"
 	"strings"
 	"testing"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
+	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/tidwall/gjson"
 )
 
@@ -300,7 +300,14 @@ func TestReverseRemapOAuthToolNamesWithBIP39Aliases(t *testing.T) {
 	}
 }
 
-func TestReverseRemapOAuthToolNamesRejectsUnsafeMangledAliases(t *testing.T) {
+// TestReverseRemapOAuthToolNamesForwardsUnresolvableAliases pins the fail-open
+// contract of the restore path. The virtual MCP server is derived from the
+// caller and is visible in every alias, so a model both drifts the tool
+// component past recovery and invents sibling tools that were never declared.
+// Neither may be guessed into an unrelated declared tool, and neither may fail
+// the response: the invented name is reproduced from the same context on every
+// retry, so a failure ends the conversation instead of one tool call.
+func TestReverseRemapOAuthToolNamesForwardsUnresolvableAliases(t *testing.T) {
 	body := []byte(`{"tools":[{"name":"tool.name"},{"name":"tool/name"}]}`)
 	remapped, reverseMap := remapOAuthToolNamesWithOptions(body, claudeMCPAliasOptions{secret: "ambiguous-alias-caller"})
 	firstAlias := gjson.GetBytes(remapped, "tools.0.name").String()
@@ -322,46 +329,145 @@ func TestReverseRemapOAuthToolNamesRejectsUnsafeMangledAliases(t *testing.T) {
 		unknownToolID = "bbbbbbbbbbbb"
 	}
 	tests := []struct {
-		name      string
-		alias     string
-		wantError string
+		name  string
+		alias string
 	}{
 		{
-			name:      "ambiguous semantic suffix",
-			alias:     "mcp__" + firstParts.server + "__" + unknownToolID + "_" + firstParts.semantic,
-			wantError: "semantic suffix matches multiple declared tools",
+			name:  "ambiguous semantic suffix",
+			alias: "mcp__" + firstParts.server + "__" + unknownToolID + "_" + firstParts.semantic,
 		},
 		{
-			name:      "ambiguous semantic suffix with malformed tool ID",
-			alias:     "mcp__" + firstParts.server + "__" + unknownToolID[:len(unknownToolID)-1] + "_" + firstParts.semantic,
-			wantError: "semantic suffix matches multiple declared tools",
+			name:  "ambiguous semantic suffix with malformed tool ID",
+			alias: "mcp__" + firstParts.server + "__" + unknownToolID[:len(unknownToolID)-1] + "_" + firstParts.semantic,
 		},
 		{
-			name:      "unrecoverable semantic suffix",
-			alias:     "mcp__" + firstParts.server + "__" + unknownToolID + "_missing_tool",
-			wantError: "no unique request-local match",
+			name:  "unrecoverable semantic suffix",
+			alias: "mcp__" + firstParts.server + "__" + unknownToolID + "_missing_tool",
+		},
+		{
+			// Reported shape: the model keeps the virtual server and names a tool
+			// it was never given, here a client-side device that is not a tool.
+			name:  "invented sibling tool in the virtual server",
+			alias: "mcp__" + firstParts.server + "__inspect_image",
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			response := []byte(fmt.Sprintf(`{"content":[{"type":"tool_use","id":"toolu_1","name":%q,"input":{}}]}`, test.alias))
-			_, errReverse := reverseRemapOAuthToolNames(response, reverseMap)
-			if errReverse == nil || !strings.Contains(errReverse.Error(), test.wantError) {
-				t.Fatalf("reverseRemapOAuthToolNames() error = %v, want %q", errReverse, test.wantError)
+			restored, errReverse := reverseRemapOAuthToolNames(response, reverseMap)
+			if errReverse != nil {
+				t.Fatalf("reverseRemapOAuthToolNames() error = %v, want nil", errReverse)
 			}
-			var requestErr cliproxyexecutor.RequestScopedError
-			if !errors.As(errReverse, &requestErr) || !requestErr.IsRequestScoped() {
-				t.Fatalf("reverseRemapOAuthToolNames() error = %T %v, want request-scoped", errReverse, errReverse)
+			if got := gjson.GetBytes(restored, "content.0.name").String(); got != test.alias {
+				t.Fatalf("restored tool name = %q, want it forwarded unchanged as %q", got, test.alias)
 			}
 
 			line := []byte(fmt.Sprintf(`data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":%q,"input":{}}}`, test.alias))
-			_, errStream := reverseRemapOAuthToolNamesFromStreamLine(line, reverseMap)
-			if errStream == nil || !strings.Contains(errStream.Error(), test.wantError) {
-				t.Fatalf("reverseRemapOAuthToolNamesFromStreamLine() error = %v, want %q", errStream, test.wantError)
+			restoredLine, errStream := reverseRemapOAuthToolNamesFromStreamLine(line, reverseMap)
+			if errStream != nil {
+				t.Fatalf("reverseRemapOAuthToolNamesFromStreamLine() error = %v, want nil", errStream)
 			}
-			requestErr = nil
-			if !errors.As(errStream, &requestErr) || !requestErr.IsRequestScoped() {
-				t.Fatalf("reverseRemapOAuthToolNamesFromStreamLine() error = %T %v, want request-scoped", errStream, errStream)
+			if got := gjson.GetBytes(helps.JSONPayload(restoredLine), "content_block.name").String(); got != test.alias {
+				t.Fatalf("restored stream tool name = %q, want it forwarded unchanged as %q", got, test.alias)
+			}
+		})
+	}
+}
+
+// TestReverseRemapOAuthToolNamesLogsForwardedAliases pins the structured
+// fail-open event. Forwarding an unrestorable name is deliberate and costs only
+// one tool call, so nothing surfaces to the client and this log entry is the
+// only signal an operator gets. It must stay machine-readable, and it must not
+// fire for the ordinary client tool names that flow through the same branch.
+func TestReverseRemapOAuthToolNamesLogsForwardedAliases(t *testing.T) {
+	body := []byte(`{"tools":[{"name":"read_file"}]}`)
+	remapped, reverseMap := remapOAuthToolNamesWithOptions(body, claudeMCPAliasOptions{secret: "observability-caller"})
+	alias := gjson.GetBytes(remapped, "tools.0.name").String()
+	parts, ok := parseClaudeMCPAlias(alias)
+	if !ok {
+		t.Fatalf("alias is invalid: %q", alias)
+	}
+
+	previousLevel := log.GetLevel()
+	log.SetLevel(log.DebugLevel)
+	hook := test.NewLocal(log.StandardLogger())
+	t.Cleanup(func() {
+		hook.Reset()
+		log.SetLevel(previousLevel)
+	})
+
+	tests := []struct {
+		name       string
+		toolName   string
+		wantLevel  log.Level
+		wantFields map[string]any
+	}{
+		{
+			// Reported shape: a sibling tool invented inside the real virtual server.
+			name:      "invented sibling is warned",
+			toolName:  "mcp__" + parts.server + "__inspect_image",
+			wantLevel: log.WarnLevel,
+			wantFields: map[string]any{
+				"component":          "claude_oauth_mcp_alias",
+				"mcp_server":         parts.server,
+				"matched_candidates": 0,
+				"outcome":            "forwarded_unchanged",
+			},
+		},
+		{
+			// A whole invented server never reaches the candidate scans, so it is
+			// traced at debug rather than warned.
+			name:      "invented virtual server is traced",
+			toolName:  "mcp__not_a_real_server__inspect_image",
+			wantLevel: log.DebugLevel,
+			wantFields: map[string]any{
+				"component":  "claude_oauth_mcp_alias",
+				"mcp_server": "not_a_real_server",
+				"outcome":    "forwarded_unknown_server",
+			},
+		},
+		{
+			// Every plain client tool name takes the unknown-server branch on every
+			// response. Logging there would drown the signal above.
+			name:     "plain client tool name is silent",
+			toolName: "Bash",
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			hook.Reset()
+			response := []byte(fmt.Sprintf(`{"content":[{"type":"tool_use","id":"toolu_1","name":%q,"input":{}}]}`, testCase.toolName))
+			restored, errReverse := reverseRemapOAuthToolNames(response, reverseMap)
+			if errReverse != nil {
+				t.Fatalf("reverseRemapOAuthToolNames() error = %v, want nil", errReverse)
+			}
+			if got := gjson.GetBytes(restored, "content.0.name").String(); got != testCase.toolName {
+				t.Fatalf("restored tool name = %q, want it forwarded unchanged", got)
+			}
+
+			var matched *log.Entry
+			for _, entry := range hook.AllEntries() {
+				if entry.Data["tool_name"] == testCase.toolName {
+					matched = entry
+					break
+				}
+			}
+			if testCase.wantFields == nil {
+				if matched != nil {
+					t.Fatalf("logged %q at %s, want no entry for a plain tool name", matched.Message, matched.Level)
+				}
+				return
+			}
+			if matched == nil {
+				t.Fatalf("no log entry carries tool_name %q", testCase.toolName)
+			}
+			if matched.Level != testCase.wantLevel {
+				t.Fatalf("log level = %s, want %s", matched.Level, testCase.wantLevel)
+			}
+			for key, want := range testCase.wantFields {
+				if got := matched.Data[key]; got != want {
+					t.Fatalf("log field %q = %v (%T), want %v (%T)", key, got, got, want, want)
+				}
 			}
 		})
 	}
@@ -555,35 +661,31 @@ func TestRemapKeepsReverseMapEmptyWhenOnlyCallerMCPToolsArePresent(t *testing.T)
 	}
 }
 
-func TestReverseRemapOAuthToolNamesMarksTrailingMarkupFailureRequestScoped(t *testing.T) {
+// TestReverseRemapOAuthToolNamesForwardsTrailingMarkupAliases covers an alias
+// the model emitted with trailing prompt markup. The name cannot be restored
+// safely, so it is forwarded verbatim and the client reports an unknown tool
+// instead of the whole response failing.
+func TestReverseRemapOAuthToolNamesForwardsTrailingMarkupAliases(t *testing.T) {
 	const alias = "mcp__hmzqrngkulqv__xuo7jlxlpzee_clear_thinking"
 	malformedAlias := alias + "</parameter>\n<parameter name=\"merge\""
 	reverseMap := map[string]string{alias: "clear_thinking"}
 
 	response := []byte(fmt.Sprintf(`{"content":[{"type":"tool_use","id":"toolu_1","name":%q,"input":{}}]}`, malformedAlias))
 	restored, errReverse := reverseRemapOAuthToolNames(response, reverseMap)
-	if errReverse == nil {
-		t.Fatal("reverseRemapOAuthToolNames() error = nil, want fail-closed alias error")
+	if errReverse != nil {
+		t.Fatalf("reverseRemapOAuthToolNames() error = %v, want nil", errReverse)
 	}
 	if !bytes.Equal(restored, response) {
-		t.Fatalf("reverseRemapOAuthToolNames() returned modified response: %s", restored)
-	}
-	var requestErr cliproxyexecutor.RequestScopedError
-	if !errors.As(errReverse, &requestErr) || !requestErr.IsRequestScoped() {
-		t.Fatalf("reverseRemapOAuthToolNames() error = %T %v, want request-scoped", errReverse, errReverse)
+		t.Fatalf("reverseRemapOAuthToolNames() = %s, want unchanged %s", restored, response)
 	}
 
 	line := []byte(fmt.Sprintf(`data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":%q,"input":{}}}`, malformedAlias))
 	restoredLine, errStream := reverseRemapOAuthToolNamesFromStreamLine(line, reverseMap)
-	if errStream == nil {
-		t.Fatal("reverseRemapOAuthToolNamesFromStreamLine() error = nil, want fail-closed alias error")
+	if errStream != nil {
+		t.Fatalf("reverseRemapOAuthToolNamesFromStreamLine() error = %v, want nil", errStream)
 	}
 	if !bytes.Equal(restoredLine, line) {
-		t.Fatalf("reverseRemapOAuthToolNamesFromStreamLine() returned modified line: %s", restoredLine)
-	}
-	requestErr = nil
-	if !errors.As(errStream, &requestErr) || !requestErr.IsRequestScoped() {
-		t.Fatalf("reverseRemapOAuthToolNamesFromStreamLine() error = %T %v, want request-scoped", errStream, errStream)
+		t.Fatalf("reverseRemapOAuthToolNamesFromStreamLine() = %s, want unchanged %s", restoredLine, line)
 	}
 }
 
