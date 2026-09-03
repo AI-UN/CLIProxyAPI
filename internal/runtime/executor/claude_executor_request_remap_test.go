@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps"
+	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/tidwall/gjson"
 )
 
@@ -367,6 +369,105 @@ func TestReverseRemapOAuthToolNamesForwardsUnresolvableAliases(t *testing.T) {
 			}
 			if got := gjson.GetBytes(helps.JSONPayload(restoredLine), "content_block.name").String(); got != test.alias {
 				t.Fatalf("restored stream tool name = %q, want it forwarded unchanged as %q", got, test.alias)
+			}
+		})
+	}
+}
+
+// TestReverseRemapOAuthToolNamesLogsForwardedAliases pins the structured
+// fail-open event. Forwarding an unrestorable name is deliberate and costs only
+// one tool call, so nothing surfaces to the client and this log entry is the
+// only signal an operator gets. It must stay machine-readable, and it must not
+// fire for the ordinary client tool names that flow through the same branch.
+func TestReverseRemapOAuthToolNamesLogsForwardedAliases(t *testing.T) {
+	body := []byte(`{"tools":[{"name":"read_file"}]}`)
+	remapped, reverseMap := remapOAuthToolNamesWithOptions(body, claudeMCPAliasOptions{secret: "observability-caller"})
+	alias := gjson.GetBytes(remapped, "tools.0.name").String()
+	parts, ok := parseClaudeMCPAlias(alias)
+	if !ok {
+		t.Fatalf("alias is invalid: %q", alias)
+	}
+
+	previousLevel := log.GetLevel()
+	log.SetLevel(log.DebugLevel)
+	hook := test.NewLocal(log.StandardLogger())
+	t.Cleanup(func() {
+		hook.Reset()
+		log.SetLevel(previousLevel)
+	})
+
+	tests := []struct {
+		name       string
+		toolName   string
+		wantLevel  log.Level
+		wantFields map[string]any
+	}{
+		{
+			// Reported shape: a sibling tool invented inside the real virtual server.
+			name:      "invented sibling is warned",
+			toolName:  "mcp__" + parts.server + "__inspect_image",
+			wantLevel: log.WarnLevel,
+			wantFields: map[string]any{
+				"component":          "claude_oauth_mcp_alias",
+				"mcp_server":         parts.server,
+				"matched_candidates": 0,
+				"outcome":            "forwarded_unchanged",
+			},
+		},
+		{
+			// A whole invented server never reaches the candidate scans, so it is
+			// traced at debug rather than warned.
+			name:      "invented virtual server is traced",
+			toolName:  "mcp__not_a_real_server__inspect_image",
+			wantLevel: log.DebugLevel,
+			wantFields: map[string]any{
+				"component":  "claude_oauth_mcp_alias",
+				"mcp_server": "not_a_real_server",
+				"outcome":    "forwarded_unknown_server",
+			},
+		},
+		{
+			// Every plain client tool name takes the unknown-server branch on every
+			// response. Logging there would drown the signal above.
+			name:     "plain client tool name is silent",
+			toolName: "Bash",
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			hook.Reset()
+			response := []byte(fmt.Sprintf(`{"content":[{"type":"tool_use","id":"toolu_1","name":%q,"input":{}}]}`, testCase.toolName))
+			restored, errReverse := reverseRemapOAuthToolNames(response, reverseMap)
+			if errReverse != nil {
+				t.Fatalf("reverseRemapOAuthToolNames() error = %v, want nil", errReverse)
+			}
+			if got := gjson.GetBytes(restored, "content.0.name").String(); got != testCase.toolName {
+				t.Fatalf("restored tool name = %q, want it forwarded unchanged", got)
+			}
+
+			var matched *log.Entry
+			for _, entry := range hook.AllEntries() {
+				if entry.Data["tool_name"] == testCase.toolName {
+					matched = entry
+					break
+				}
+			}
+			if testCase.wantFields == nil {
+				if matched != nil {
+					t.Fatalf("logged %q at %s, want no entry for a plain tool name", matched.Message, matched.Level)
+				}
+				return
+			}
+			if matched == nil {
+				t.Fatalf("no log entry carries tool_name %q", testCase.toolName)
+			}
+			if matched.Level != testCase.wantLevel {
+				t.Fatalf("log level = %s, want %s", matched.Level, testCase.wantLevel)
+			}
+			for key, want := range testCase.wantFields {
+				if got := matched.Data[key]; got != want {
+					t.Fatalf("log field %q = %v (%T), want %v (%T)", key, got, got, want, want)
+				}
 			}
 		})
 	}
