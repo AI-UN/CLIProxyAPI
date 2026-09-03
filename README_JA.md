@@ -44,7 +44,7 @@ CLIProxyAPI は、CLI向けのOpenAI/Gemini/Claude/Codex/Grok互換APIインタ�
 - `patched` は、このFork固有の変更を保持する手動管理のパッチ元ブランチです。
 - `patched-main` は、上流の `main` にパッチ元を適用してGitHub Actionsが生成する自動化ブランチです。自動的にforce pushされる場合があります。
 - `v*-patched` タグは、上流リリースタグにForkのパッチを適用して生成され、このForkのリリースを起動します。
-- ReleaseアセットとコンテナイメージはこのForkから公開されます。Dockerイメージは `ghcr.io/<owner>/cli-proxy-api` にpushされます。
+- ReleaseアセットとコンテナイメージはこのForkから公開されます。Dockerイメージは `ghcr.io/ai-un/cli-proxy-api` にpushされます。
 - v7.2.100 より新しいForkのコンテナイメージは `gcr.io/distroless/static-debian13:nonroot` を使用し、non-rootユーザーで実行されます。CGOを無効にした静的ビルドのため、動的ライブラリプラグインはサポートされません。
 - 手動の機能開発は、`fix/*`、`feat/*`、`refactor/*`、`ci/*` などの通常の作業ブランチで行ってください。
 
