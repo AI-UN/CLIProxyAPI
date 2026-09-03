@@ -1887,6 +1887,17 @@ func (resolver claudeMCPAliasResolver) resolve(name string) (string, bool) {
 
 	server := claudeMCPAliasServer(name)
 	if _, known := resolver.servers[server]; !known {
+		// Plain client tool names land here on every response, so only an
+		// MCP-shaped name is worth a trace: that is the model inventing a whole
+		// virtual server rather than a sibling tool inside a real one.
+		if log.IsLevelEnabled(log.DebugLevel) && helps.IsClaudeMCPToolName(name) {
+			log.WithFields(log.Fields{
+				"component":  "claude_oauth_mcp_alias",
+				"tool_name":  name,
+				"mcp_server": server,
+				"outcome":    "forwarded_unknown_server",
+			}).Debug("claude oauth mcp alias: forwarding MCP-shaped name from an unknown virtual server")
+		}
 		return "", false
 	}
 
@@ -1966,7 +1977,15 @@ func (resolver claudeMCPAliasResolver) resolve(name string) (string, bool) {
 
 	// Ambiguous or unknown: never guess a tool the model may not have asked for,
 	// and never fail the response over a name this resolver did not issue.
-	log.Warnf("claude oauth mcp alias: forwarding tool name %q unchanged, %d request-local candidates matched", name, matchCount)
+	// Structured rather than formatted: this is the one event worth aggregating
+	// or alerting on, because it is the fork deliberately declining to restore.
+	log.WithFields(log.Fields{
+		"component":          "claude_oauth_mcp_alias",
+		"tool_name":          name,
+		"mcp_server":         server,
+		"matched_candidates": matchCount,
+		"outcome":            "forwarded_unchanged",
+	}).Warn("claude oauth mcp alias: forwarding tool name unchanged, no unique request-local match")
 	return "", false
 }
 
