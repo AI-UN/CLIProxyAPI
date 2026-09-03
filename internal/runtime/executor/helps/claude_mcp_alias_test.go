@@ -110,7 +110,7 @@ func TestClaudeMCPToolAlias_SemanticSuffixIsSafeAndBounded(t *testing.T) {
 }
 
 func TestClaudeMCPToolAlias_Strict64CharLimitUnderAllWordCombinations(t *testing.T) {
-	for i := 0; i < ClaudeMCPAliasWordCount(); i++ {
+	for i := 0; i < ClaudeMCPAliasBrandCount(); i++ {
 		secret := fmt.Sprintf("test-secret-%d", i)
 		original := strings.Repeat(fmt.Sprintf("tool_%d_long_name_", i), 50)
 		alias := ClaudeMCPToolAlias(secret, original, uint32(i))
@@ -127,8 +127,8 @@ func TestClaudeMCPToolAlias_Strict64CharLimitUnderAllWordCombinations(t *testing
 func TestAllocateClaudeMCPToolAlias_StopsWhenAttemptsExhausted(t *testing.T) {
 	const secret = "exhaust-space"
 	const original = "tool.name"
-	reserved := make(map[string]bool, ClaudeMCPAliasWordCount())
-	for attempt := 0; attempt < ClaudeMCPAliasWordCount(); attempt++ {
+	reserved := make(map[string]bool, ClaudeMCPAliasBrandCount())
+	for attempt := 0; attempt < ClaudeMCPAliasBrandCount(); attempt++ {
 		reserved[ClaudeMCPToolAlias(secret, original, uint32(attempt))] = true
 	}
 	if _, ok := AllocateClaudeMCPToolAlias(secret, original, reserved); ok {
@@ -142,7 +142,7 @@ func TestAllocateClaudeMCPToolAlias_StopsWhenAttemptsExhausted(t *testing.T) {
 func TestClaudeMCPToolAlias_ProbesAllWordsWithoutDuplicates(t *testing.T) {
 	const secret = "test-secret"
 	const original = "tool.name"
-	totalWords := ClaudeMCPAliasWordCount()
+	totalWords := ClaudeMCPAliasBrandCount()
 	seen := make(map[string]bool, totalWords)
 
 	for attempt := 0; attempt < totalWords; attempt++ {
@@ -162,8 +162,8 @@ func TestClaudeMCPToolAlias_ProbesAllWordsWithoutDuplicates(t *testing.T) {
 func TestAllocateClaudeMCPToolAlias_AllocatesEveryDistinctWord(t *testing.T) {
 	const secret = "allocate-full-space"
 	const original = "tool.name"
-	totalWords := ClaudeMCPAliasWordCount()
-	reserved := make(map[string]bool, totalWords)
+	reserved := make(map[string]bool, ClaudeMCPAliasBrandCount())
+	totalWords := ClaudeMCPAliasBrandCount()
 
 	for i := 0; i < totalWords; i++ {
 		alias, ok := AllocateClaudeMCPToolAlias(secret, original, reserved)
@@ -202,21 +202,24 @@ func assertClaudeMCPAliasWords(t *testing.T, alias string) {
 	if len(parts) != 3 {
 		t.Fatalf("alias %q does not have mcp/server/tool parts", alias)
 	}
-	serverWords := strings.Split(parts[1], "_")
+	serverWords := strings.SplitN(parts[1], "_", 2)
 	if len(serverWords) != 2 {
-		t.Fatalf("alias %q server %q is not two BIP-39 words", alias, parts[1])
+		t.Fatalf("alias %q server %q is not brand_TLD", alias, parts[1])
 	}
 	toolID, _, ok := strings.Cut(parts[2], "_")
 	if !ok {
 		t.Fatalf("alias %q tool component %q has no semantic suffix", alias, parts[2])
 	}
-	allowed := make(map[string]struct{}, len(claudeMCPAliasEnglishWords))
-	for _, word := range claudeMCPAliasEnglishWords {
+	allowed := make(map[string]struct{}, len(claudeMCPAliasBrandWords)+len(claudeMCPAliasTLDWords))
+	for _, word := range claudeMCPAliasBrandWords {
 		allowed[word] = struct{}{}
 	}
-	for _, word := range append(append([]string{}, serverWords...), toolID) {
+	for _, word := range claudeMCPAliasTLDWords {
+		allowed[word] = struct{}{}
+	}
+	for _, word := range []string{serverWords[0], serverWords[1], toolID} {
 		if _, exists := allowed[word]; !exists {
-			t.Fatalf("alias %q uses non-BIP39 word %q", alias, word)
+			t.Fatalf("alias %q uses non-wordlist word %q", alias, word)
 		}
 	}
 }
@@ -225,27 +228,45 @@ func TestClaudeMCPAliasWordlistIntegrity(t *testing.T) {
 	// The wordlist is embedded, so a truncated or reordered file would silently
 	// disable aliasing (AllocateClaudeMCPToolAlias returns false for every tool)
 	// instead of failing loudly. Pin the exact BIP-39 English dictionary.
-	if got := ClaudeMCPAliasWordCount(); got != 2048 {
-		t.Fatalf("wordlist size = %d, want the 2048-word BIP-39 English dictionary", got)
+	if got := ClaudeMCPAliasBrandCount(); got != 2048 {
+		t.Fatalf("brand wordlist size = %d, want 2048", got)
 	}
-	if got := claudeMCPAliasEnglishWords[0]; got != "abandon" {
-		t.Fatalf("first word = %q, want %q", got, "abandon")
+	if got := claudeMCPAliasBrandWords[0]; got != "twitter" {
+		t.Fatalf("first brand word = %q, want %q", got, "twitter")
 	}
-	if got := claudeMCPAliasEnglishWords[2047]; got != "zoo" {
-		t.Fatalf("last word = %q, want %q", got, "zoo")
-	}
-	seen := make(map[string]struct{}, len(claudeMCPAliasEnglishWords))
-	for _, word := range claudeMCPAliasEnglishWords {
+	seen := make(map[string]struct{}, len(claudeMCPAliasBrandWords))
+	for _, word := range claudeMCPAliasBrandWords {
 		if _, duplicate := seen[word]; duplicate {
-			t.Fatalf("duplicate word %q would shrink the usable alias space", word)
+			t.Fatalf("duplicate brand word %q would shrink the usable alias space", word)
 		}
 		seen[word] = struct{}{}
 		if word == "" || len(word) > 8 {
-			t.Fatalf("word %q is outside the 1..8 character budget assumed by the 64-char alias limit", word)
+			t.Fatalf("brand word %q is outside the 4..8 character budget assumed by the 64-char alias limit", word)
 		}
 		for _, char := range word {
 			if char < 'a' || char > 'z' {
-				t.Fatalf("word %q contains a non-lowercase-ASCII rune %q", word, char)
+				t.Fatalf("brand word %q contains a non-lowercase-ASCII rune %q", word, char)
+			}
+		}
+	}
+	if got := ClaudeMCPAliasTLDCount(); got != 38 {
+		t.Fatalf("TLD wordlist size = %d, want 38", got)
+	}
+	if got := claudeMCPAliasTLDWords[0]; got != "com" {
+		t.Fatalf("first TLD word = %q, want %q", got, "com")
+	}
+	tldSeen := make(map[string]struct{}, len(claudeMCPAliasTLDWords))
+	for _, word := range claudeMCPAliasTLDWords {
+		if _, duplicate := tldSeen[word]; duplicate {
+			t.Fatalf("duplicate TLD word %q would shrink the server space", word)
+		}
+		tldSeen[word] = struct{}{}
+		if word == "" || len(word) > 6 {
+			t.Fatalf("TLD word %q is outside the 2..6 character budget assumed by the 64-char alias limit", word)
+		}
+		for _, char := range word {
+			if char < 'a' || char > 'z' {
+				t.Fatalf("TLD word %q contains a non-lowercase-ASCII rune %q", word, char)
 			}
 		}
 	}
@@ -257,8 +278,8 @@ func TestAllocateClaudeMCPToolAliasMatchesSingleShotConstruction(t *testing.T) {
 	// two would make them silently stop testing the production path.
 	const secret = "shared-construction"
 	for _, original := range []string{"Bash", "read_file", strings.Repeat("long_tool_name_", 9)} {
-		reserved := make(map[string]bool, ClaudeMCPAliasWordCount())
-		for attempt := 0; attempt < ClaudeMCPAliasWordCount(); attempt++ {
+		reserved := make(map[string]bool, ClaudeMCPAliasBrandCount())
+		for attempt := 0; attempt < ClaudeMCPAliasBrandCount(); attempt++ {
 			allocated, ok := AllocateClaudeMCPToolAlias(secret, original, reserved)
 			if !ok {
 				t.Fatalf("original %q: allocation exhausted at attempt %d", original, attempt)
