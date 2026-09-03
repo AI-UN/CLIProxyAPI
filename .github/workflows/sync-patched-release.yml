@@ -22,6 +22,10 @@ concurrency:
 permissions:
   contents: write
   issues: write
+  # Required to dispatch the release workflows: GitHub suppresses `push:`
+  # triggers for any ref pushed with the automatic GITHUB_TOKEN, so the
+  # patched tag pushed below cannot fire them implicitly.
+  actions: write
 
 env:
   UPSTREAM_REPO: https://github.com/router-for-me/CLIProxyAPI.git
@@ -34,20 +38,10 @@ jobs:
   sync-patched-release:
     runs-on: ubuntu-latest
     steps:
-      - name: Validate workflow token
-        env:
-          GH_PAT: ${{ secrets.GH_PAT }}
-        run: |
-          set -euo pipefail
-          if [ -z "$GH_PAT" ]; then
-            echo "::error::Missing required secret GH_PAT"
-            exit 1
-          fi
-
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GH_PAT }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure git
         run: |
@@ -67,7 +61,7 @@ jobs:
       - name: Generate patched-main
         id: patched-main
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -193,7 +187,7 @@ jobs:
       - name: Create patched release tag
         if: steps.release-tag.outputs.has_tag == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.release-tag.outputs.tag }}
           PATCHED_TAG: ${{ steps.release-tag.outputs.patched_tag }}
         run: |
@@ -263,6 +257,15 @@ jobs:
 
           git tag "$PATCHED_TAG"
           git push origin "$PATCHED_TAG"
+
+          # The tag push above CANNOT trigger the release workflows: GitHub
+          # suppresses workflow triggers for any ref pushed with the automatic
+          # GITHUB_TOKEN, to prevent recursive runs. `push: tags: v*-patched`
+          # only fires when a human or a PAT pushes the tag, so dispatch both
+          # workflows explicitly. Never hand-push a patched tag and also run
+          # this workflow for the same release, or both builds run twice.
+          gh workflow run release.yaml --repo "$GITHUB_REPOSITORY" --ref "$PATCHED_TAG"
+          gh workflow run docker-image.yml --repo "$GITHUB_REPOSITORY" --ref "$PATCHED_TAG"
 
           issue_title="[patched-release-conflict] ${PATCH_SOURCE_BRANCH} conflicts with ${TAG}"
           close_issue_by_title "$issue_title"
