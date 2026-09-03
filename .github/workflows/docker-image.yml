@@ -7,7 +7,9 @@ on:
 
 env:
   APP_NAME: CLIProxyAPI
-  GHCR_REPO: ghcr.io/${{ github.repository_owner }}/cli-proxy-api
+  # OCI repository names must be lowercase, so the owner cannot be derived from
+  # github.repository_owner (AI-UN) without breaking every push and manifest.
+  GHCR_REPO: ghcr.io/ai-un/cli-proxy-api
 
 permissions:
   contents: read
