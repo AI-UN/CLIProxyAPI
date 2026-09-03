@@ -30,24 +30,31 @@ func IsClaudeMCPToolName(name string) bool {
 	return true
 }
 
-// ClaudeMCPAliasWordCount is the BIP-39 English dictionary size used for the
-// virtual server pair and the one-word tool ID.
-func ClaudeMCPAliasWordCount() int {
-	return len(claudeMCPAliasEnglishWords)
+// ClaudeMCPAliasBrandCount is the brand/project wordlist size used for both
+// halves of the virtual server name and the one-word tool ID.
+func ClaudeMCPAliasBrandCount() int {
+	return len(claudeMCPAliasBrandWords)
+}
+
+// ClaudeMCPAliasTLDCount is the top-level-domain wordlist size used for the
+// second half of the virtual server name.
+func ClaudeMCPAliasTLDCount() int {
+	return len(claudeMCPAliasTLDWords)
 }
 
 // ClaudeMCPToolAlias derives a Claude Code-style MCP tool name. Aliases from
 // one caller share a virtual server component. The tool component combines a
 // stable keyed ID with a truncated semantic suffix so the model can distinguish
 // tools by name while the request-local symbol table restores the exact original.
-// A higher attempt linearly probes the next word when a collision must be avoided.
-// Server and tool IDs use BIP-39 English words so weak models are less likely
-// to drift high-entropy Base32 fragments.
+// The virtual server reads like a real project domain — a recognizable brand or
+// open-source project name followed by a popular top-level domain — so weak models
+// are less likely to drift high-entropy Base32 fragments and the names no longer
+// fingerprint as BIP-39 words.
 func ClaudeMCPToolAlias(secret, original string, attempt uint32) string {
 	toolDigest := claudeMCPAliasDigest(secret, "tool", original)
 	return claudeMCPAliasFor(
 		claudeMCPAliasServerComponent(secret),
-		claudeMCPAliasWord(toolDigest[:], 0, attempt),
+		claudeMCPAliasBrandWord(toolDigest[:], 0, attempt),
 		original,
 	)
 }
@@ -57,10 +64,10 @@ func ClaudeMCPToolAlias(secret, original string, attempt uint32) string {
 // suffix cannot spin forever. ok is false only when every one-word tool ID for
 // this semantic is already reserved.
 func AllocateClaudeMCPToolAlias(secret, original string, reserved map[string]bool) (string, bool) {
-	words := claudeMCPAliasEnglishWords
+	words := claudeMCPAliasBrandWords
 	totalWords := len(words)
 	if totalWords == 0 {
-		log.Error("claude oauth mcp alias: embedded BIP-39 wordlist is empty, tool aliasing is disabled")
+		log.Error("claude oauth mcp alias: embedded brand wordlist is empty, tool aliasing is disabled")
 		return "", false
 	}
 	server := claudeMCPAliasServerComponent(secret)
@@ -93,13 +100,22 @@ func claudeMCPAliasFor(server, toolID, original string) string {
 // server shared by every alias generated for one credential.
 func claudeMCPAliasServerComponent(secret string) string {
 	serverDigest := claudeMCPAliasDigest(secret, "server", "")
-	return claudeMCPAliasWord(serverDigest[:], 0, 0) + "_" + claudeMCPAliasWord(serverDigest[:], 2, 0)
+	return claudeMCPAliasBrandWord(serverDigest[:], 0, 0) + "_" + claudeMCPAliasTLDWord(serverDigest[:], 2, 0)
 }
 
-func claudeMCPAliasWord(digest []byte, offset int, attempt uint32) string {
-	words := claudeMCPAliasEnglishWords
+func claudeMCPAliasBrandWord(digest []byte, offset int, attempt uint32) string {
+	words := claudeMCPAliasBrandWords
 	if len(words) == 0 || offset < 0 || offset+2 > len(digest) {
 		return "tool"
+	}
+	base := int(binary.BigEndian.Uint16(digest[offset : offset+2]))
+	return words[(base+int(attempt))%len(words)]
+}
+
+func claudeMCPAliasTLDWord(digest []byte, offset int, attempt uint32) string {
+	words := claudeMCPAliasTLDWords
+	if len(words) == 0 || offset < 0 || offset+2 > len(digest) {
+		return "dev"
 	}
 	base := int(binary.BigEndian.Uint16(digest[offset : offset+2]))
 	return words[(base+int(attempt))%len(words)]
