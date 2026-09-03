@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - 'v*-patched'
+  # Dispatched by sync-patched-release.yml, because a tag it pushes with
+  # GITHUB_TOKEN never fires the `push` trigger above. GITHUB_REF_NAME is the
+  # dispatched tag, so build metadata resolves identically either way.
+  workflow_dispatch:
 
 env:
   APP_NAME: CLIProxyAPI
