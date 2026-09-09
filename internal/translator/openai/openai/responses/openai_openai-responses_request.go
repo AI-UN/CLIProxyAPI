@@ -55,6 +55,14 @@ func convertOpenAIResponsesRequestToOpenAIChatCompletions(modelName string, inpu
 	// Set stream configuration
 	_ = outDoc.Set("stream", stream)
 
+	// Both APIs accept a top-level service_tier. Preserve the client's choice so
+	// the selection reaches the provider and payload rules can route on it;
+	// dropping it here serves the request on the provider's default lane with no
+	// signal to the caller.
+	if serviceTier := root.Get("service_tier"); serviceTier.Exists() && serviceTier.Type == ojson.String {
+		_ = outDoc.Set("service_tier", serviceTier.String())
+	}
+
 	// Map Responses text format to Chat Completions response format.
 	if textFormat := root.Get("text.format"); textFormat.Exists() {
 		if responseFormat := convertResponsesTextFormatToChatResponseFormat(textFormat); len(responseFormat) > 0 {
