@@ -3,7 +3,6 @@ package responses
 import (
 	"bytes"
 	"encoding/json"
-	"strings"
 
 	"github.com/MoeForge/moego/ojson"
 	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
@@ -44,23 +43,10 @@ func ConvertOpenAIResponsesRequestToCodex(modelName string, inputRawJSON []byte,
 		}
 	}
 	deleteCodexRequestFieldsDoc(rawJSON, ensureDoc, "max_completion_tokens", "max_tokens", "temperature", "top_p")
-	if serviceTier := ojson.GetBytesNoCopy(rawJSON, "service_tier"); serviceTier.Exists() {
-		if serviceTier.Type == ojson.String {
-			switch strings.ToLower(strings.TrimSpace(serviceTier.String())) {
-			case "priority", "fast":
-				if serviceTier.String() != "priority" {
-					_ = ensureDoc().Set("service_tier", "priority")
-				}
-			case "ultrafast":
-				if serviceTier.String() != "ultrafast" {
-					_ = ensureDoc().Set("service_tier", "ultrafast")
-				}
-			default:
-				_ = ensureDoc().Delete("service_tier")
-			}
-		} else {
-			_ = ensureDoc().Delete("service_tier")
-		}
+	if serviceTier, ok := translatorcommon.NormalizeCodexServiceTier(ojson.GetBytesNoCopy(rawJSON, "service_tier")); ok {
+		_ = ensureDoc().Set("service_tier", serviceTier)
+	} else if ojson.GetBytesNoCopy(rawJSON, "service_tier").Exists() {
+		_ = ensureDoc().Delete("service_tier")
 	}
 
 	deleteCodexRequestFieldsDoc(rawJSON, ensureDoc, "truncation", "prompt_cache_options", "prompt_cache_retention")
