@@ -62,6 +62,9 @@ type oaiToResponsesState struct {
 	// these are emitted as custom_tool_call items instead of function_call
 	CustomToolNames map[string]struct{}
 	FinishReason    string
+	// ServiceTier is the tier the provider reports it actually served, which can
+	// differ from the tier the request asked for.
+	ServiceTier string
 	// usage aggregation
 	PromptTokens     int64
 	CachedTokens     int64
@@ -317,6 +320,11 @@ func buildResponsesCompletedEvent(st *oaiToResponsesState, nextSeq func() int) [
 	}
 	// Inject original request fields into response as per docs/response.completed.json
 	completed = st.RequestEcho.apply(completed, "response.")
+	// The echo above reports the requested tier. When the provider states which
+	// tier it actually served, that value wins so a downgrade stays visible.
+	if st.ServiceTier != "" {
+		completed, _ = sjson.SetBytes(completed, "response.service_tier", st.ServiceTier)
+	}
 
 	type completedOutputItem struct {
 		index int
@@ -473,6 +481,10 @@ func ConvertOpenAIChatCompletionsResponseToOpenAIResponses(ctx context.Context, 
 		}
 		if !root.Get("choices").Exists() || !root.Get("choices").IsArray() {
 			return [][]byte{}
+		}
+		// Record the tier the provider reports it served.
+		if serviceTier := root.Get("service_tier"); serviceTier.Type == gjson.String && serviceTier.String() != "" {
+			st.ServiceTier = serviceTier.String()
 		}
 	}
 
@@ -1106,6 +1118,10 @@ func ConvertOpenAIChatCompletionsResponseToOpenAIResponsesNonStream(_ context.Co
 		}
 	}
 	resp = echo.apply(resp, "")
+	// Prefer the tier the provider reports it served over the requested tier.
+	if serviceTier := root.Get("service_tier"); serviceTier.Type == gjson.String && serviceTier.String() != "" {
+		resp, _ = sjson.SetBytes(resp, "service_tier", serviceTier.String())
+	}
 
 	// Build output list from choices[...]
 	var outputItems [][]byte
