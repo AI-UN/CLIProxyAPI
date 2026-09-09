@@ -3,7 +3,6 @@ package responses
 import (
 	"bytes"
 	"encoding/json"
-	"strings"
 
 	translatorcommon "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/common"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/util"
@@ -28,22 +27,14 @@ func ConvertOpenAIResponsesRequestToCodex(modelName string, inputRawJSON []byte,
 	rawJSON = setCodexRequiredInclude(rawJSON)
 	// Codex Responses rejects token limit fields, so strip them out before forwarding.
 	rawJSON = deleteCodexRequestFields(rawJSON, "max_output_tokens", "max_completion_tokens", "temperature", "top_p")
-	if serviceTier := gjson.GetBytes(rawJSON, "service_tier"); serviceTier.Exists() {
-		if serviceTier.Type == gjson.String {
-			switch strings.ToLower(strings.TrimSpace(serviceTier.String())) {
-			case "priority", "fast":
-				if serviceTier.String() != "priority" {
-					rawJSON, _ = sjson.SetBytes(rawJSON, "service_tier", "priority")
-				}
-			case "ultrafast":
-				if serviceTier.String() != "ultrafast" {
-					rawJSON, _ = sjson.SetBytes(rawJSON, "service_tier", "ultrafast")
-				}
-			default:
-				rawJSON = deleteCodexRequestFields(rawJSON, "service_tier")
-			}
-		} else {
-			rawJSON = deleteCodexRequestFields(rawJSON, "service_tier")
+	// The upstream catalog owns the service_tier vocabulary, so a tier this build
+	// does not recognize is forwarded instead of dropped; dropping it silently
+	// serves the request on the default lane.
+	if serviceTier, ok := translatorcommon.NormalizeCodexServiceTier(gjson.GetBytes(rawJSON, "service_tier")); !ok {
+		rawJSON = deleteCodexRequestFields(rawJSON, "service_tier")
+	} else if gjson.GetBytes(rawJSON, "service_tier").String() != serviceTier {
+		if updated, errSet := sjson.SetBytes(rawJSON, "service_tier", serviceTier); errSet == nil {
+			rawJSON = updated
 		}
 	}
 
