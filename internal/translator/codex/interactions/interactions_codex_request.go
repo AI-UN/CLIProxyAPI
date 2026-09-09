@@ -423,7 +423,7 @@ func copyInteractionsCodexTopLevelDoc(doc *ojson.Doc, root ojson.Result) {
 			}
 		}
 	}
-	if serviceTier := normalizeInteractionsCodexServiceTier(root.Get("service_tier")); serviceTier != "" {
+	if serviceTier, ok := translatorcommon.NormalizeCodexServiceTier(root.Get("service_tier")); ok {
 		_ = doc.Set("service_tier", serviceTier)
 	}
 	if toolChoice := root.Get("tool_choice"); toolChoice.Exists() {
@@ -789,17 +789,6 @@ func interactionsCodexDefaultRole(role, fallback string) string {
 		return fallback
 	}
 	return "user"
-}
-
-func normalizeInteractionsCodexServiceTier(serviceTier ojson.Result) string {
-	if !serviceTier.Exists() || serviceTier.Type != ojson.String {
-		return ""
-	}
-	switch strings.ToLower(strings.TrimSpace(serviceTier.String())) {
-	case "priority", "fast":
-		return "priority"
-	}
-	return ""
 }
 
 func codexInputAudioFormatFromMIME(mimeType string) string {
