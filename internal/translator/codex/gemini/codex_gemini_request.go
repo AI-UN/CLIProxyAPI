@@ -93,7 +93,7 @@ func ConvertGeminiRequestToCodex(modelName string, inputRawJSON []byte, _ bool) 
 
 	// Model
 	_ = outDoc.Set("model", modelName)
-	if serviceTier := normalizeGeminiCodexServiceTier(root.Get("service_tier")); serviceTier != "" {
+	if serviceTier, ok := translatorcommon.NormalizeCodexServiceTier(root.Get("service_tier")); ok {
 		_ = outDoc.Set("service_tier", serviceTier)
 	}
 
@@ -516,17 +516,6 @@ func codexMessageWithPart(role string, part []byte) []byte {
 	_ = msgDoc.Set("role", role)
 	_ = msgDoc.SetRawBytes("content", translatorcommon.JoinRawArray([][]byte{part}))
 	return msgDoc.Bytes()
-}
-
-func normalizeGeminiCodexServiceTier(serviceTier ojson.Result) string {
-	if !serviceTier.Exists() || serviceTier.Type != ojson.String {
-		return ""
-	}
-	switch strings.ToLower(strings.TrimSpace(serviceTier.String())) {
-	case "priority", "fast":
-		return "priority"
-	}
-	return ""
 }
 
 func codexContentPartFromGeminiInlineData(part ojson.Result) ([]byte, bool) {
