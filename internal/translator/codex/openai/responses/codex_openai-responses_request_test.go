@@ -10,8 +10,10 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-var benchmarkConvertSystemRoleOutput []byte
-var benchmarkConvertNormalizedOutput []byte
+var (
+	benchmarkConvertSystemRoleOutput []byte
+	benchmarkConvertNormalizedOutput []byte
+)
 
 // TestConvertSystemRoleToDeveloper_BasicConversion tests the basic system -> developer role conversion
 func TestConvertSystemRoleToDeveloper_BasicConversion(t *testing.T) {
@@ -281,7 +283,6 @@ func TestConvertOpenAIResponsesRequestToCodexNormalizesRequiredFields(t *testing
 		"max_completion_tokens",
 		"temperature",
 		"top_p",
-		"service_tier",
 		"truncation",
 		"prompt_cache_options",
 		"prompt_cache_retention",
@@ -290,6 +291,9 @@ func TestConvertOpenAIResponsesRequestToCodexNormalizesRequiredFields(t *testing
 		if gjson.GetBytes(output, path).Exists() {
 			t.Fatalf("%s should be removed: %s", path, output)
 		}
+	}
+	if serviceTier := gjson.GetBytes(output, "service_tier"); serviceTier.String() != "standard" {
+		t.Fatalf("service_tier = %s, want standard forwarded to upstream", serviceTier.Raw)
 	}
 }
 

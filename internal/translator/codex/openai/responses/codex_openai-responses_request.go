@@ -27,8 +27,15 @@ func ConvertOpenAIResponsesRequestToCodex(modelName string, inputRawJSON []byte,
 	rawJSON = setCodexRequiredInclude(rawJSON)
 	// Codex Responses rejects token limit fields, so strip them out before forwarding.
 	rawJSON = deleteCodexRequestFields(rawJSON, "max_output_tokens", "max_completion_tokens", "temperature", "top_p")
-	if serviceTier := gjson.GetBytes(rawJSON, "service_tier"); serviceTier.Exists() && serviceTier.String() != "priority" {
+	// The upstream catalog owns the service_tier vocabulary, so a tier this build
+	// does not recognize is forwarded instead of dropped; dropping it silently
+	// serves the request on the default lane.
+	if serviceTier, ok := translatorcommon.NormalizeCodexServiceTier(gjson.GetBytes(rawJSON, "service_tier")); !ok {
 		rawJSON = deleteCodexRequestFields(rawJSON, "service_tier")
+	} else if gjson.GetBytes(rawJSON, "service_tier").String() != serviceTier {
+		if updated, errSet := sjson.SetBytes(rawJSON, "service_tier", serviceTier); errSet == nil {
+			rawJSON = updated
+		}
 	}
 
 	rawJSON = deleteCodexRequestFields(rawJSON, "truncation", "prompt_cache_options", "prompt_cache_retention")
