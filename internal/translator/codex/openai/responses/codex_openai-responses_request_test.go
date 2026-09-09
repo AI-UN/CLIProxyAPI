@@ -10,8 +10,10 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-var benchmarkConvertSystemRoleOutput []byte
-var benchmarkConvertNormalizedOutput []byte
+var (
+	benchmarkConvertSystemRoleOutput []byte
+	benchmarkConvertNormalizedOutput []byte
+)
 
 // TestConvertSystemRoleToDeveloper_BasicConversion tests the basic system -> developer role conversion
 func TestConvertSystemRoleToDeveloper_BasicConversion(t *testing.T) {
@@ -281,7 +283,6 @@ func TestConvertOpenAIResponsesRequestToCodexNormalizesRequiredFields(t *testing
 		"max_completion_tokens",
 		"temperature",
 		"top_p",
-		"service_tier",
 		"truncation",
 		"prompt_cache_options",
 		"prompt_cache_retention",
@@ -290,6 +291,9 @@ func TestConvertOpenAIResponsesRequestToCodexNormalizesRequiredFields(t *testing
 		if gjson.GetBytes(output, path).Exists() {
 			t.Fatalf("%s should be removed: %s", path, output)
 		}
+	}
+	if serviceTier := gjson.GetBytes(output, "service_tier"); serviceTier.String() != "standard" {
+		t.Fatalf("service_tier = %s, want standard forwarded to upstream", serviceTier.Raw)
 	}
 }
 
@@ -827,20 +831,32 @@ func TestConvertOpenAIResponsesRequestToCodex_ServiceTier(t *testing.T) {
 			wantExists: true,
 			wantTier:   "ultrafast",
 		},
+		// A tier this build does not recognize is forwarded, not dropped: the
+		// catalog owns the vocabulary, and silently removing a tier the client
+		// selected serves the request on the default lane with no signal.
 		{
-			name:       "standard stripped",
+			name:       "tier unknown to this build is forwarded",
 			tierJSON:   `"standard"`,
-			wantExists: false,
+			wantExists: true,
+			wantTier:   "standard",
 		},
 		{
-			name:       "default stripped",
+			name:       "default is forwarded",
 			tierJSON:   `"default"`,
-			wantExists: false,
+			wantExists: true,
+			wantTier:   "default",
 		},
 		{
-			name:       "flex stripped",
+			name:       "flex is forwarded",
 			tierJSON:   `"flex"`,
-			wantExists: false,
+			wantExists: true,
+			wantTier:   "flex",
+		},
+		{
+			name:       "unknown tier keeps its original casing",
+			tierJSON:   `" Flex "`,
+			wantExists: true,
+			wantTier:   "Flex",
 		},
 		{
 			name:       "non-string stripped",
