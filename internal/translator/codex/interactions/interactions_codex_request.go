@@ -341,7 +341,7 @@ func copyInteractionsToolsToCodex(out []byte, root gjson.Result) []byte {
 }
 
 func copyInteractionsCodexTopLevel(out []byte, root gjson.Result) []byte {
-	if serviceTier := normalizeInteractionsCodexServiceTier(root.Get("service_tier")); serviceTier != "" {
+	if serviceTier, ok := translatorcommon.NormalizeCodexServiceTier(root.Get("service_tier")); ok {
 		current := gjson.GetBytes(out, "service_tier")
 		if current.Type != gjson.String || current.String() != serviceTier {
 			out, _ = sjson.SetBytes(out, "service_tier", serviceTier)
@@ -651,17 +651,6 @@ func interactionsCodexDefaultRole(role, fallback string) string {
 		return fallback
 	}
 	return "user"
-}
-
-func normalizeInteractionsCodexServiceTier(serviceTier gjson.Result) string {
-	if !serviceTier.Exists() || serviceTier.Type != gjson.String {
-		return ""
-	}
-	switch strings.ToLower(strings.TrimSpace(serviceTier.String())) {
-	case "priority", "fast":
-		return "priority"
-	}
-	return ""
 }
 
 func codexInputAudioFormatFromMIME(mimeType string) string {
