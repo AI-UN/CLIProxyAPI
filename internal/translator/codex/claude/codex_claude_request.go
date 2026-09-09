@@ -465,11 +465,11 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool, 
 	// OpenAI documents reasoning summaries as explicit opt-in output. Leave
 	// reasoning.summary to the source request's canonical summary intent instead
 	// of coupling it to reasoning effort.
-	serviceTier := normalizeCodexServiceTier(rootResult.Get("service_tier"))
+	serviceTier, hasServiceTier := translatorcommon.NormalizeCodexServiceTier(rootResult.Get("service_tier"))
 	if speed := rootResult.Get("speed"); speed.Type == ojson.String && speed.String() == "fast" {
-		serviceTier = "priority"
+		serviceTier, hasServiceTier = "priority", true
 	}
-	if serviceTier != "" {
+	if hasServiceTier {
 		_ = templateDoc.Set("service_tier", serviceTier)
 	}
 	_ = templateDoc.Set("stream", true)
@@ -509,19 +509,6 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool, 
 	translatorcommon.SetRawArrayItemsDoc(templateDoc, "input", inputItems)
 
 	return templateDoc.Bytes(), drops.Err()
-}
-
-func normalizeCodexServiceTier(result ojson.Result) string {
-	if !result.Exists() || result.Type != ojson.String {
-		return ""
-	}
-
-	switch strings.ToLower(strings.TrimSpace(result.String())) {
-	case "fast", "priority":
-		return "priority"
-	default:
-		return ""
-	}
 }
 
 // shortenCodexCallIDIfNeeded keeps Claude tool IDs within the OpenAI Responses
