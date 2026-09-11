@@ -112,3 +112,107 @@ func stripThinkingFieldsDoc(doc *ojson.Doc, format string, keepTopLevelEffort ..
 	}
 	return modified
 }
+
+// emptyEffortPaths lists the request fields that carry a discrete thinking
+// level for a provider format.
+func emptyEffortPaths(provider string) []string {
+	switch provider {
+	case "claude":
+		return []string{"output_config.effort"}
+	case "gemini":
+		return []string{"generationConfig.thinkingConfig.thinkingLevel", "generationConfig.thinkingConfig.thinking_level"}
+	case "antigravity":
+		return []string{"request.generationConfig.thinkingConfig.thinkingLevel", "request.generationConfig.thinkingConfig.thinking_level"}
+	case "interactions":
+		return []string{
+			"generation_config.thinking_level",
+			"generation_config.thinkingLevel",
+			"generation_config.thinking_config.thinking_level",
+			"generation_config.thinking_config.thinkingLevel",
+			"generation_config.thinkingConfig.thinking_level",
+			"generation_config.thinkingConfig.thinkingLevel",
+		}
+	case "openai":
+		return []string{"reasoning_effort"}
+	case "kimi", "kimi-ai", "kimi.ai", "kimi.com":
+		return []string{"reasoning_effort", "thinking.effort"}
+	case "codex", "xai":
+		return []string{"reasoning.effort"}
+	default:
+		return nil
+	}
+}
+
+// emptyEffortContainers lists objects that must not be left empty after their
+// blank effort field is removed.
+func emptyEffortContainers(provider string) []string {
+	switch provider {
+	case "claude":
+		return []string{"output_config"}
+	case "gemini":
+		return []string{"generationConfig.thinkingConfig"}
+	case "antigravity":
+		return []string{"request.generationConfig.thinkingConfig"}
+	case "interactions":
+		return []string{"generation_config.thinking_config", "generation_config.thinkingConfig"}
+	case "kimi", "kimi-ai", "kimi.ai", "kimi.com":
+		return []string{"thinking"}
+	case "codex", "xai":
+		return []string{"reasoning"}
+	default:
+		return nil
+	}
+}
+
+// StripEmptyThinkingLevel removes blank thinking level fields from a request body.
+//
+// Some clients always emit the level field and leave it empty (or null) to mean
+// "use the provider default". An empty level is not a valid value for any
+// provider, so it is dropped here instead of being validated or forwarded.
+func StripEmptyThinkingLevel(body []byte, provider string) []byte {
+	if len(body) == 0 || !ojson.ValidBytes(body) {
+		return body
+	}
+	doc := ojson.NewDoc(body)
+	if !stripEmptyThinkingLevelDoc(doc, provider) {
+		return body
+	}
+	return doc.Bytes()
+}
+
+func stripEmptyThinkingLevelDoc(doc *ojson.Doc, provider string) bool {
+	if doc == nil {
+		return false
+	}
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	if provider == "openai-response" {
+		provider = "codex"
+	}
+
+	modified := false
+	for _, path := range emptyEffortPaths(provider) {
+		value := doc.Get(path)
+		if !value.Exists() {
+			continue
+		}
+		if value.Type != ojson.Null && !(value.Type == ojson.String && strings.TrimSpace(value.String()) == "") {
+			continue
+		}
+		if doc.Delete(path) == nil {
+			modified = true
+		}
+	}
+	if !modified {
+		return false
+	}
+
+	for _, path := range emptyEffortContainers(provider) {
+		container := doc.Get(path)
+		if container.Exists() && container.IsObject() && len(container.Map()) == 0 {
+			if util.DeleteJSONDocIfExists(doc, path) == nil {
+				modified = true
+			}
+		}
+	}
+	return modified
+}
