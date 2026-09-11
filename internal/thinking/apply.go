@@ -206,6 +206,11 @@ func applyThinking(body, sourceBody []byte, model string, fromFormat string, toF
 	if fromFormat == "" {
 		fromFormat = providerFormat
 	}
+	// A blank level means "unspecified". Drop it before any routing decision so
+	// it is neither validated as a level nor forwarded upstream as an invalid
+	// value, even when no applier is registered for the provider.
+	body = StripEmptyThinkingLevel(body, providerFormat)
+
 	// Summary visibility is orthogonal to thinking effort. Keep the original
 	// source intent before a suffix-specific applier rewrites provider fields,
 	// then restore it after the canonical effort has been applied.
@@ -701,9 +706,12 @@ func extractGeminiConfig(body []byte, provider string) ThinkingConfig {
 		// Google official Gemini Python SDK sends snake_case field names
 		level = gjson.GetBytes(body, prefix+".thinking_level")
 	}
+	// An empty level carries no intent (some clients always send the field).
+	// Fall through so a numeric budget, if present, is still honored.
 	if level.Exists() {
-		value := level.String()
+		value := strings.ToLower(strings.TrimSpace(level.String()))
 		switch value {
+		case "":
 		case "none":
 			return ThinkingConfig{Mode: ModeNone, Budget: 0}
 		case "auto":
@@ -794,11 +802,16 @@ func extractInteractionsConfig(body []byte) ThinkingConfig {
 func extractOpenAIConfig(body []byte) ThinkingConfig {
 	// Check reasoning_effort (OpenAI Chat Completions format)
 	if effort := gjson.GetBytes(body, "reasoning_effort"); effort.Exists() {
-		value := effort.String()
-		if value == "none" {
+		value := strings.ToLower(strings.TrimSpace(effort.String()))
+		switch value {
+		case "":
+			// Empty means "unspecified": let the upstream default apply.
+			return ThinkingConfig{}
+		case "none":
 			return ThinkingConfig{Mode: ModeNone, Budget: 0}
+		default:
+			return ThinkingConfig{Mode: ModeLevel, Level: ThinkingLevel(value)}
 		}
-		return ThinkingConfig{Mode: ModeLevel, Level: ThinkingLevel(value)}
 	}
 
 	return ThinkingConfig{}
@@ -857,11 +870,16 @@ func extractKimiConfig(body []byte) ThinkingConfig {
 func extractCodexConfig(body []byte) ThinkingConfig {
 	// Check reasoning.effort (Codex / OpenAI Responses API format)
 	if effort := gjson.GetBytes(body, "reasoning.effort"); effort.Exists() {
-		value := effort.String()
-		if value == "none" {
+		value := strings.ToLower(strings.TrimSpace(effort.String()))
+		switch value {
+		case "":
+			// Empty means "unspecified": let the upstream default apply.
+			return ThinkingConfig{}
+		case "none":
 			return ThinkingConfig{Mode: ModeNone, Budget: 0}
+		default:
+			return ThinkingConfig{Mode: ModeLevel, Level: ThinkingLevel(value)}
 		}
-		return ThinkingConfig{Mode: ModeLevel, Level: ThinkingLevel(value)}
 	}
 
 	return ThinkingConfig{}
