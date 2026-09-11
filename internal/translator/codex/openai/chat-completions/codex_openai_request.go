@@ -60,9 +60,11 @@ func convertOpenAIRequestToResponses(modelName string, inputRawJSON []byte, stre
 		}
 	}
 
-	// Map reasoning effort
-	if v := root.Get("reasoning_effort"); v.Exists() {
-		_ = outDoc.Set("reasoning.effort", v.Value())
+	// Map reasoning effort. A blank value means "unspecified" and must not be
+	// forwarded as an empty level.
+	reasoningEffort := root.Get("reasoning_effort")
+	if effort := strings.ToLower(strings.TrimSpace(reasoningEffort.String())); reasoningEffort.Type == ojson.String && effort != "" {
+		_ = outDoc.Set("reasoning.effort", effort)
 	} else if codex {
 		_ = outDoc.Set("reasoning.effort", "medium")
 	}
