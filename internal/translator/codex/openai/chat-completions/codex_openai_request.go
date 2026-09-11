@@ -32,7 +32,6 @@ import (
 //   - []byte: The transformed request data in OpenAI Responses API format
 func ConvertOpenAIRequestToCodex(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
 	return convertOpenAIRequestToCodex(modelName, inputRawJSON, stream)
-
 }
 
 // convertOpenAIRequestToCodex also reports a file or audio part Responses cannot
@@ -56,9 +55,11 @@ func convertOpenAIRequestToCodex(modelName string, inputRawJSON []byte, stream b
 		}
 	}
 
-	// Map reasoning effort
-	if v := root.Get("reasoning_effort"); v.Exists() {
-		_ = outDoc.Set("reasoning.effort", v.Value())
+	// Map reasoning effort. A blank value means "unspecified" and must not be
+	// forwarded as an empty level.
+	reasoningEffort := root.Get("reasoning_effort")
+	if effort := strings.ToLower(strings.TrimSpace(reasoningEffort.String())); reasoningEffort.Type == ojson.String && effort != "" {
+		_ = outDoc.Set("reasoning.effort", effort)
 	} else {
 		_ = outDoc.Set("reasoning.effort", "medium")
 	}
