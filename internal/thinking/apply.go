@@ -274,6 +274,10 @@ func applyThinkingDocCore(doc *ojson.Doc, docValid bool, sourceBody []byte, mode
 	if fromFormat == "" {
 		fromFormat = providerFormat
 	}
+	if docValid && stripEmptyThinkingLevelDoc(doc, providerFormat) {
+		modified = true
+	}
+
 	// 1. Parse suffix and get modelInfo
 	suffixResult := ParseSuffix(model)
 	baseModel := suffixResult.ModelName
@@ -897,9 +901,12 @@ func extractGeminiConfigFromGetter(get func(string) ojson.Result, provider strin
 	if !level.Exists() {
 		level = get(prefix + ".thinking_level")
 	}
+	// An empty level carries no intent (some clients always send the field).
+	// Fall through so a numeric budget, if present, is still honored.
 	if level.Exists() {
-		value := level.String()
+		value := strings.ToLower(strings.TrimSpace(level.String()))
 		switch value {
+		case "":
 		case "none":
 			return ThinkingConfig{Mode: ModeNone, Budget: 0}
 		case "auto":
@@ -944,10 +951,13 @@ func extractInteractionsConfigFromGetter(get func(string) ojson.Result) Thinking
 		"generation_config.thinkingConfig.thinkingLevel",
 	} {
 		level := get(path)
-		if !level.Exists() {
+		if !level.Exists() || level.Type == ojson.Null {
 			continue
 		}
 		value := strings.ToLower(strings.TrimSpace(level.String()))
+		if value == "" {
+			continue
+		}
 		switch value {
 		case "none":
 			return ThinkingConfig{Mode: ModeNone, Budget: 0}
@@ -992,11 +1002,18 @@ func extractOpenAIConfig(body []byte) ThinkingConfig {
 
 func extractOpenAIConfigFromGetter(get func(string) ojson.Result) ThinkingConfig {
 	if effort := get("reasoning_effort"); effort.Exists() {
-		value := effort.String()
-		if value == "none" {
-			return ThinkingConfig{Mode: ModeNone, Budget: 0}
+		if effort.Type == ojson.Null {
+			return ThinkingConfig{}
 		}
-		return ThinkingConfig{Mode: ModeLevel, Level: ThinkingLevel(value)}
+		value := strings.ToLower(strings.TrimSpace(effort.String()))
+		switch value {
+		case "":
+			return ThinkingConfig{}
+		case "none":
+			return ThinkingConfig{Mode: ModeNone, Budget: 0}
+		default:
+			return ThinkingConfig{Mode: ModeLevel, Level: ThinkingLevel(value)}
+		}
 	}
 	return ThinkingConfig{}
 }
@@ -1049,11 +1066,18 @@ func extractCodexConfig(body []byte) ThinkingConfig {
 
 func extractCodexConfigFromGetter(get func(string) ojson.Result) ThinkingConfig {
 	if effort := get("reasoning.effort"); effort.Exists() {
-		value := effort.String()
-		if value == "none" {
-			return ThinkingConfig{Mode: ModeNone, Budget: 0}
+		if effort.Type == ojson.Null {
+			return ThinkingConfig{}
 		}
-		return ThinkingConfig{Mode: ModeLevel, Level: ThinkingLevel(value)}
+		value := strings.ToLower(strings.TrimSpace(effort.String()))
+		switch value {
+		case "":
+			return ThinkingConfig{}
+		case "none":
+			return ThinkingConfig{Mode: ModeNone, Budget: 0}
+		default:
+			return ThinkingConfig{Mode: ModeLevel, Level: ThinkingLevel(value)}
+		}
 	}
 	return ThinkingConfig{}
 }
