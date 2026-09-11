@@ -275,6 +275,10 @@ func applyThinkingDocCore(doc *ojson.Doc, docValid bool, sourceBody []byte, mode
 	if fromFormat == "" {
 		fromFormat = providerFormat
 	}
+	if docValid && stripEmptyThinkingLevelDoc(doc, providerFormat) {
+		modified = true
+	}
+
 	// 1. Parse suffix and get modelInfo
 	suffixResult := ParseSuffix(model)
 	baseModel := suffixResult.ModelName
