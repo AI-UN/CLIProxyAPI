@@ -68,15 +68,18 @@ func convertOpenAIRequestToCodex(modelName string, inputRawJSON []byte, stream b
 	// 	out, _ = sjson.SetBytes(out, "max_output_tokens", v.Value())
 	// }
 
-	// Map reasoning effort
-	if v := gjson.GetBytes(rawJSON, "reasoning_effort"); v.Exists() {
-		out, _ = sjson.SetBytes(out, "reasoning.effort", v.Value())
-	} else {
-		out, _ = sjson.SetBytes(out, "reasoning.effort", "medium")
+	// Map reasoning effort. A blank value means "unspecified" and must not be
+	// forwarded as an empty level.
+	reasoningEffort := "medium"
+	if v := gjson.GetBytes(rawJSON, "reasoning_effort"); v.Exists() && v.Type == gjson.String {
+		if effort := strings.ToLower(strings.TrimSpace(v.String())); effort != "" {
+			reasoningEffort = effort
+		}
 	}
 	if serviceTier := normalizeCodexServiceTier(root.Get("service_tier")); serviceTier != "" {
 		out, _ = sjson.SetBytes(out, "service_tier", serviceTier)
 	}
+	out, _ = sjson.SetBytes(out, "reasoning.effort", reasoningEffort)
 	out, _ = sjson.SetBytes(out, "parallel_tool_calls", true)
 	// OpenAI documents reasoning summaries as explicit opt-in output. Leave
 	// reasoning.summary to the source request's canonical summary intent instead
