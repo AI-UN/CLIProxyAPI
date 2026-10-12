@@ -2,6 +2,7 @@ package responses
 
 import (
 	"bytes"
+
 	"strings"
 
 	"github.com/MoeForge/moego/json"
@@ -44,9 +45,12 @@ func ConvertOpenAIResponsesRequestToCodex(modelName string, inputRawJSON []byte,
 		}
 	}
 	deleteCodexRequestFieldsDoc(rawJSON, ensureDoc, "max_completion_tokens", "max_tokens", "temperature", "top_p")
-	if serviceTier, ok := translatorcommon.NormalizeCodexServiceTier(ojson.GetBytesNoCopy(rawJSON, "service_tier")); ok {
-		_ = ensureDoc().Set("service_tier", serviceTier)
-	} else if ojson.GetBytesNoCopy(rawJSON, "service_tier").Exists() {
+	serviceTierResult := ojson.GetBytesNoCopy(rawJSON, "service_tier")
+	if serviceTier, ok := translatorcommon.NormalizeCodexServiceTier(serviceTierResult); ok {
+		if serviceTierResult.String() != serviceTier {
+			_ = ensureDoc().Set("service_tier", serviceTier)
+		}
+	} else if serviceTierResult.Exists() {
 		_ = ensureDoc().Delete("service_tier")
 	}
 
