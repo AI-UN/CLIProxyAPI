@@ -2450,7 +2450,8 @@ func (resolver claudeMCPAliasResolver) resolve(name string) (string, bool) {
 		return matchedOriginal, true
 	}
 
-	if len(resolver.passthroughs) > 0 {
+	// An ambiguous client alias must not fall through to a different caller MCP tool.
+	if matchCount == 0 && len(resolver.passthroughs) > 0 {
 		// Recovery 1: The model prepended the virtual server to the full caller MCP tool name
 		// (e.g. "mcp__<virtual>__<real_server>__<tool>"). After stripping the virtual server prefix,
 		// re-prefixing suffix with "mcp__" produces the original caller tool name.
