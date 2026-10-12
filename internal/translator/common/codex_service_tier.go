@@ -26,8 +26,8 @@ var codexServiceTierAliases = map[string]string{
 // that catalog grows new tiers without any change here. Values outside the known
 // aliases are therefore forwarded unchanged rather than removed, because dropping
 // a tier the client explicitly selected downgrades the request to the default
-// lane with no error and no signal to the caller. An unusable value is left for
-// the upstream to reject so the failure stays observable.
+// lane with no error and no signal to the caller. Missing, non-string, and blank
+// values are treated as unspecified and are not forwarded.
 func NormalizeCodexServiceTier(serviceTier gjson.Result) (string, bool) {
 	if serviceTier.Type != gjson.String {
 		return "", false
