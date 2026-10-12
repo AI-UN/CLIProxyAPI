@@ -1829,6 +1829,24 @@ func TestConvertOpenAIRequestToCodexServiceTier(t *testing.T) {
 			wantEffort: "medium",
 		},
 		{
+			name:       "blank reasoning effort defaults to medium",
+			body:       `{"model":"gpt-6-sol","messages":[{"role":"user","content":"hi"}],"reasoning_effort":""}`,
+			wantExists: false,
+			wantEffort: "medium",
+		},
+		{
+			name:       "whitespace reasoning effort defaults to medium",
+			body:       `{"model":"gpt-6-sol","messages":[{"role":"user","content":"hi"}],"reasoning_effort":"  "}`,
+			wantExists: false,
+			wantEffort: "medium",
+		},
+		{
+			name:       "null reasoning effort defaults to medium",
+			body:       `{"model":"gpt-6-sol","messages":[{"role":"user","content":"hi"}],"reasoning_effort":null}`,
+			wantExists: false,
+			wantEffort: "medium",
+		},
+		{
 			name:       "absent service tier omitted",
 			body:       `{"model":"gpt-6-sol","messages":[{"role":"user","content":"hi"}]}`,
 			wantExists: false,
