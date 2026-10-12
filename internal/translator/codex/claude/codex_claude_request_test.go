@@ -318,7 +318,10 @@ func TestConvertClaudeRequestToCodex_ServiceTier(t *testing.T) {
 				inputJSON, _ = sjson.SetRawBytes(inputJSON, "speed", []byte(tt.speedJSON))
 			}
 
-			result, _ := ConvertClaudeRequestToCodex("gpt-5.4", inputJSON, false)
+			result, err := ConvertClaudeRequestToCodex("gpt-5.4", inputJSON, false)
+			if err != nil {
+				t.Fatalf("ConvertClaudeRequestToCodex() error = %v", err)
+			}
 			serviceTierResult := gjson.GetBytes(result, "service_tier")
 			if serviceTierResult.Exists() != tt.wantExists {
 				t.Fatalf("service_tier exists = %v, want %v. Output: %s", serviceTierResult.Exists(), tt.wantExists, string(result))
