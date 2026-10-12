@@ -58,6 +58,14 @@ CLIProxyAPI は、CLI向けのOpenAI/Gemini/Claude/Codex/Grok互換APIインタ�
 
 重要: `patched-main` や `rebased/*` などの自動化ブランチへ手動でコミットしないでください。これらのブランチは自動化の使い捨て出力であり、上書きされたり、手動コミットを保持せずにforce pushされたりする可能性があります。
 
+### v8 で維持するパッチ
+
+- Claude の MCP エイリアスには自然な単語を使用します。復元できない、または曖昧な応答エイリアスは、別のツールを推測せずにそのまま転送し、構造化された診断情報を記録します。上流のツール変更とスレッド継続処理は維持し、継続状態がない場合は引き続きエラーを返します。
+- Codex の未知の空でない `service_tier` 文字列は、黙って削除せずに転送します。OpenAI Responses は要求されたティアを転送し、上流が実際に提供したティアを報告した場合はその値を返します。
+- 空文字列、`null`、空白のみの thinking level は未指定として扱います。Gemini の明示的な thinking budget とモデル接尾辞の優先順位は維持します。
+
+これらのパッチを更新する際は、現在の上流 `main` を基準に `patched` を再構築し、上流でまだ実装されていない差分だけを移植してください。
+
 ## スポンサー
 
 [![https://www.packyapi.com/register?aff=cliproxyapi](./assets/packycode-en.png)](https://www.packyapi.com/register?aff=cliproxyapi)
