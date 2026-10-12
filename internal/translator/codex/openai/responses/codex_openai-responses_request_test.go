@@ -260,7 +260,10 @@ func TestConvertOpenAIResponsesRequestToCodexNormalizesRequiredFields(t *testing
 		"input":[{"type":"message","role":"system","content":"hello"}]
 	}`)
 
-	output, _ := ConvertOpenAIResponsesRequestToCodex("gpt-5.6", inputJSON, true)
+	output, err := ConvertOpenAIResponsesRequestToCodex("gpt-5.6", inputJSON, true)
+	if err != nil {
+		t.Fatalf("ConvertOpenAIResponsesRequestToCodex() error = %v", err)
+	}
 
 	if stream := gjson.GetBytes(output, "stream"); stream.Type != gjson.True {
 		t.Fatalf("stream = %s, want true", stream.Raw)
@@ -971,7 +974,10 @@ func TestConvertOpenAIResponsesRequestToCodex_ServiceTier(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			inputJSON := []byte(fmt.Sprintf(`{"model":"gpt-5.6","service_tier":%s,"input":[{"type":"message","role":"user","content":"hello"}]}`, tt.tierJSON))
-			output, _ := ConvertOpenAIResponsesRequestToCodex("gpt-5.6", inputJSON, true)
+			output, err := ConvertOpenAIResponsesRequestToCodex("gpt-5.6", inputJSON, true)
+			if err != nil {
+				t.Fatalf("ConvertOpenAIResponsesRequestToCodex() error = %v", err)
+			}
 			res := gjson.GetBytes(output, "service_tier")
 			if res.Exists() != tt.wantExists {
 				t.Fatalf("service_tier exists = %v, want %v; output: %s", res.Exists(), tt.wantExists, string(output))
