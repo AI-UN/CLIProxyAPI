@@ -45,6 +45,27 @@ CLIProxyAPI 是一个为 CLI 提供 OpenAI/Gemini/Claude/Codex/Grok 兼容 API �
 </tbody>
 </table>
 
+## 关于此 Fork
+
+此 Fork 会跟踪上游 CLIProxyAPI，同时把本地补丁和发布自动化与上游开发分离。
+
+- `patched` 是人工维护的补丁源分支，用于保存此 Fork 的专属改动。
+- `patched-main` 是由 GitHub Actions 自动生成的分支，内容来自上游 `main` 加补丁源，可能被自动 force push。
+- `v*-patched` 标签由上游发布标签加此 Fork 的补丁生成，并触发此 Fork 的发布流程。
+- Release 产物和容器镜像由此 Fork 发布。Docker 镜像会推送到 `ghcr.io/ai-un/cli-proxy-api`。
+- 高于 v7.2.100 的 Fork 容器镜像使用 `gcr.io/distroless/static-debian13:nonroot`，并以非 root 用户运行。由于这些镜像采用禁用 CGO 的静态构建，因此不支持动态库插件。
+- 人工功能开发必须使用普通工作分支，例如 `fix/*`、`feat/*`、`refactor/*` 或 `ci/*`。
+
+重要：不要手动向 `patched-main`、`rebased/*` 等自动化分支提交代码。这些分支是自动化流程的可丢弃输出，可能被覆盖，也可能在不保留手动提交的情况下被 force push。
+
+### v8 保留的补丁
+
+- Claude 使用自然词表生成 MCP 别名。无法恢复或有歧义的响应别名会原样转发，不会猜测为其他工具，并记录结构化诊断信息。保留上游的工具变更和线程续接逻辑；续接状态缺失仍会报错。
+- Codex 中未知但非空的 `service_tier` 字符串会继续转发，不会被静默删除。OpenAI Responses 会透传请求档位，并在上游提供实际服务档位时返回该值。
+- 空字符串、`null` 或仅含空白字符的 thinking level 视为未指定。保留 Gemini 显式 thinking budget，以及模型后缀的优先级。
+
+更新这些补丁时，应以当前上游 `main` 为基线重建 `patched`，仅移植上游尚未实现的差异。
+
 ## 赞助商
 
 [![https://www.packyapi.com/register?aff=cliproxyapi](./assets/packycode-cn.png)](https://www.packyapi.com/register?aff=cliproxyapi)
