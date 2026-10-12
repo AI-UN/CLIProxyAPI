@@ -1186,6 +1186,35 @@ func TestReverseRemapOAuthToolNamesHybridPassthroughPrecedenceAndAmbiguity(t *te
 			t.Fatalf("content.0.name = %q, want %q forwarded unchanged", got, name)
 		}
 	})
+
+	t.Run("ambiguous client suffix does not fall through to passthrough", func(t *testing.T) {
+		reverseMap := map[string]string{
+			virtual + "blanket_files_read": "files/read",
+			virtual + "brand_files_read":   "files:read",
+			"mcp__fs__files_read":          "mcp__fs__files_read",
+		}
+		// Both client aliases match the semantic suffix. Even though the
+		// passthrough has the same suffix, it must not break that ambiguity.
+		name := virtual + "files_read"
+		resp := []byte(fmt.Sprintf(`{"content":[{"type":"tool_use","id":"toolu_1","name":%q}]}`, name))
+		restored, err := restoreClaudeOAuthToolNamesFromResponse(resp, reverseMap)
+		if err != nil {
+			t.Fatalf("restoreClaudeOAuthToolNamesFromResponse() error = %v, want nil", err)
+		}
+		if got := gjson.GetBytes(restored, "content.0.name").String(); got != name {
+			t.Fatalf("content.0.name = %q, want ambiguous name %q forwarded unchanged", got, name)
+		}
+
+		line := []byte(fmt.Sprintf(`data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":%q}}`, name))
+		restoredLine, errStream := restoreClaudeOAuthToolNamesFromStreamLine(line, reverseMap)
+		if errStream != nil {
+			t.Fatalf("restoreClaudeOAuthToolNamesFromStreamLine() error = %v, want nil", errStream)
+		}
+		if got := gjson.GetBytes(helps.JSONPayload(restoredLine), "content_block.name").String(); got != name {
+			t.Fatalf("content_block.name = %q, want ambiguous name %q forwarded unchanged", got, name)
+		}
+	})
+
 }
 
 func TestReverseRemapOAuthToolNames_UndeclaredToolFailsOpen(t *testing.T) {
@@ -1266,7 +1295,7 @@ func TestReverseRemapRestoresCallerMCPToolWrappedInVirtualServer(t *testing.T) {
 	}
 }
 
-func TestReverseRemapWrappedCallerMCPToolStaysAnErrorWhenAmbiguous(t *testing.T) {
+func TestReverseRemapWrappedCallerMCPToolForwardsUnchangedWhenAmbiguous(t *testing.T) {
 	body := []byte(`{"tools":[{"name":"Bash"},{"name":"mcp__a__query"},{"name":"mcp__b__query"}]}`)
 	_, reverseMap := remapOAuthToolNamesWithOptions(body, claudeMCPAliasOptions{secret: "wrapped-ambiguous-caller"})
 	var server string
@@ -1276,7 +1305,11 @@ func TestReverseRemapWrappedCallerMCPToolStaysAnErrorWhenAmbiguous(t *testing.T)
 		}
 	}
 	response := []byte(fmt.Sprintf(`{"content":[{"type":"tool_use","id":"toolu_1","name":%q,"input":{}}]}`, "mcp__"+server+"__query"))
-	if _, errReverse := reverseRemapOAuthToolNames(response, reverseMap); errReverse == nil || !strings.Contains(errReverse.Error(), "matches multiple declared tools") {
-		t.Fatalf("ambiguous wrapped tool error = %v, want matches multiple declared tools", errReverse)
+	restored, errReverse := reverseRemapOAuthToolNames(response, reverseMap)
+	if errReverse != nil {
+		t.Fatalf("ambiguous wrapped tool error = %v, want fail-open nil", errReverse)
+	}
+	if !bytes.Equal(restored, response) {
+		t.Fatalf("ambiguous wrapped tool response = %s, want %s forwarded unchanged", restored, response)
 	}
 }
