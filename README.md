@@ -59,6 +59,14 @@ This fork tracks upstream CLIProxyAPI while keeping local patches and release au
 
 Important: do not commit manually to automated branches such as `patched-main` or `rebased/*`. These branches are disposable outputs of automation, can be overwritten, and may be force-pushed without preserving manual commits.
 
+### Retained v8 Patches
+
+- Claude uses natural MCP alias words. Unresolved or ambiguous response aliases are forwarded unchanged without choosing a different tool, with structured diagnostics. Upstream tool-change and thread-continuation handling are preserved; missing continuation state remains an error.
+- Unknown nonblank Codex `service_tier` strings are forwarded instead of silently removed. OpenAI Responses forwards the requested tier and reports the provider-served tier when supplied.
+- Blank, null, or whitespace-only thinking levels are treated as unspecified. Explicit Gemini thinking budgets and model-suffix precedence are preserved.
+
+When updating these patches, rebuild `patched` on current upstream `main` and port only the differences not already implemented upstream.
+
 ## Sponsor
 
 [![https://www.packyapi.com/register?aff=cliproxyapi](./assets/packycode-en.png)](https://www.packyapi.com/register?aff=cliproxyapi)

@@ -58,6 +58,14 @@ CLIProxyAPI 是一个为 CLI 提供 OpenAI/Gemini/Claude/Codex/Grok 兼容 API �
 
 重要：不要手动向 `patched-main`、`rebased/*` 等自动化分支提交代码。这些分支是自动化流程的可丢弃输出，可能被覆盖，也可能在不保留手动提交的情况下被 force push。
 
+### v8 保留的补丁
+
+- Claude 使用自然词表生成 MCP 别名。无法恢复或有歧义的响应别名会原样转发，不会猜测为其他工具，并记录结构化诊断信息。保留上游的工具变更和线程续接逻辑；续接状态缺失仍会报错。
+- Codex 中未知但非空的 `service_tier` 字符串会继续转发，不会被静默删除。OpenAI Responses 会透传请求档位，并在上游提供实际服务档位时返回该值。
+- 空字符串、`null` 或仅含空白字符的 thinking level 视为未指定。保留 Gemini 显式 thinking budget，以及模型后缀的优先级。
+
+更新这些补丁时，应以当前上游 `main` 为基线重建 `patched`，仅移植上游尚未实现的差异。
+
 ## 赞助商
 
 [![https://www.packyapi.com/register?aff=cliproxyapi](./assets/packycode-cn.png)](https://www.packyapi.com/register?aff=cliproxyapi)
