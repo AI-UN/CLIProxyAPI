@@ -3,8 +3,8 @@ package thinking_test
 import (
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/thinking"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
 	"github.com/tidwall/gjson"
 )
 
@@ -70,6 +70,26 @@ func TestStripEmptyThinkingLevelKeepsBudget(t *testing.T) {
 	}
 	if got := gjson.GetBytes(out, "generationConfig.thinkingConfig.thinkingBudget").Int(); got != 8192 {
 		t.Fatalf("thinkingBudget = %d, want 8192; body=%s", got, out)
+	}
+}
+
+// A blank Gemini 3 level must not hide an explicitly supplied Gemini 2.5 budget.
+func TestApplyThinkingBlankGeminiLevelFallsBackToBudget(t *testing.T) {
+	modelInfo := &registry.ModelInfo{
+		ID:       "gemini-2.5-pro",
+		Type:     "gemini",
+		Thinking: &registry.ThinkingSupport{Min: 0, Max: 32768},
+	}
+	body := []byte(`{"model":"gemini-2.5-pro","generationConfig":{"thinkingConfig":{"thinkingLevel":" ","thinkingBudget":8192}}}`)
+	out, err := thinking.ApplyThinkingWithModelInfo(body, body, modelInfo.ID, "gemini", "gemini", "gemini", modelInfo)
+	if err != nil {
+		t.Fatalf("ApplyThinkingWithModelInfo() error = %v", err)
+	}
+	if got := gjson.GetBytes(out, "generationConfig.thinkingConfig.thinkingBudget").Int(); got != 8192 {
+		t.Fatalf("thinkingBudget = %d, want 8192; body=%s", got, out)
+	}
+	if got := gjson.GetBytes(out, "generationConfig.thinkingConfig.thinkingLevel"); got.Exists() {
+		t.Fatalf("thinkingLevel = %s, want removed; body=%s", got.Raw, out)
 	}
 }
 
