@@ -33,7 +33,10 @@ func TestConvertOpenAIResponsesRequestToOpenAIChatCompletions_ForwardsServiceTie
 				request = `{"model":"provider-model","service_tier":` + tt.tierJSON + `,"input":[{"type":"message","role":"user","content":"hi"}]}`
 			}
 
-			out := ConvertOpenAIResponsesRequestToOpenAIChatCompletions("provider-model", []byte(request), false)
+			out, err := ConvertOpenAIResponsesRequestToOpenAIChatCompletions("provider-model", []byte(request), false)
+			if err != nil {
+				t.Fatalf("ConvertOpenAIResponsesRequestToOpenAIChatCompletions() error = %v", err)
+			}
 			serviceTier := gjson.GetBytes(out, "service_tier")
 			if serviceTier.Exists() != tt.wantExists {
 				t.Fatalf("service_tier exists = %v, want %v. Outgoing: %s", serviceTier.Exists(), tt.wantExists, out)
