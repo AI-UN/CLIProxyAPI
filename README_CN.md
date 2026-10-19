@@ -60,11 +60,11 @@ CLIProxyAPI 是一个为 CLI 提供 OpenAI/Gemini/Claude/Codex/Grok 兼容 API �
 
 ### v8 保留的补丁
 
-- Claude 使用自然词表生成 MCP 别名。无法恢复或有歧义的响应别名会原样转发，不会猜测为其他工具，并记录结构化诊断信息。保留上游的工具变更和线程续接逻辑；续接状态缺失仍会报错。
+- Claude 使用自然词表生成 MCP 别名。只有在没有客户端别名候选匹配时，才会恢复被包装的完整调用方 MCP 名称；有歧义的客户端别名保持原样。无法恢复或有歧义的响应别名会原样转发，不会猜测为其他工具，并记录结构化诊断信息。保留上游的工具变更和线程续接逻辑；续接状态缺失仍会报错。
 - Codex 中未知但非空的 `service_tier` 字符串会继续转发，不会被静默删除。OpenAI Responses 会透传请求档位，并在上游提供实际服务档位时返回该值。
 - 空字符串、`null` 或仅含空白字符的 thinking level 视为未指定。保留 Gemini 显式 thinking budget，以及模型后缀的优先级。
 
-更新这些补丁时，应以当前上游 `main` 为基线重建 `patched`，仅移植上游尚未实现的差异。
+更新这些补丁时，应以当前上游 `main` 为基线重建 `patched`，仅移植上游尚未实现的差异。源分支跟踪 `origin`；请显式 fetch `upstream` 并 rebase 工作分支，不要在 `patched` 上执行 `git pull`。
 
 ## 赞助商
 
