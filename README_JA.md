@@ -45,6 +45,27 @@ CLIProxyAPI は、CLI向けのOpenAI/Gemini/Claude/Codex/Grok互換APIインタ�
 </tbody>
 </table>
 
+## このForkについて
+
+このForkは上流のCLIProxyAPIを追跡しつつ、ローカルパッチとリリース自動化を上流開発から分離しています。
+
+- `patched` は、このFork固有の変更を保持する手動管理のパッチ元ブランチです。
+- `patched-main` は、上流の `main` にパッチ元を適用してGitHub Actionsが生成する自動化ブランチです。自動的にforce pushされる場合があります。
+- `v*-patched` タグは、上流リリースタグにForkのパッチを適用して生成され、このForkのリリースを起動します。
+- ReleaseアセットとコンテナイメージはこのForkから公開されます。Dockerイメージは `ghcr.io/ai-un/cli-proxy-api` にpushされます。
+- v7.2.100 より新しいForkのコンテナイメージは `gcr.io/distroless/static-debian13:nonroot` を使用し、non-rootユーザーで実行されます。CGOを無効にした静的ビルドのため、動的ライブラリプラグインはサポートされません。
+- 手動の機能開発は、`fix/*`、`feat/*`、`refactor/*`、`ci/*` などの通常の作業ブランチで行ってください。
+
+重要: `patched-main` や `rebased/*` などの自動化ブランチへ手動でコミットしないでください。これらのブランチは自動化の使い捨て出力であり、上書きされたり、手動コミットを保持せずにforce pushされたりする可能性があります。
+
+### v8 で維持するパッチ
+
+- Claude の MCP エイリアスには自然な単語を使用します。クライアント側のエイリアス候補が一致しない場合に限り、ラップされた完全な呼び出し元 MCP 名を復元します。曖昧なクライアント側エイリアスはそのまま維持します。復元できない、または曖昧な応答エイリアスは、別のツールを推測せずにそのまま転送し、構造化された診断情報を記録します。上流のツール変更とスレッド継続処理は維持し、継続状態がない場合は引き続きエラーを返します。
+- Codex の未知の空でない `service_tier` 文字列は、黙って削除せずに転送します。OpenAI Responses は要求されたティアを転送し、上流が実際に提供したティアを報告した場合はその値を返します。
+- 空文字列、`null`、空白のみの thinking level は未指定として扱います。Gemini の明示的な thinking budget とモデル接尾辞の優先順位は維持します。
+
+これらのパッチを更新する際は、現在の上流 `main` を基準に `patched` を再構築し、上流でまだ実装されていない差分だけを移植してください。作業ブランチは `origin` を追跡します。`upstream` を明示的に fetch して作業ブランチを rebase し、`patched` で `git pull` しないでください。
+
 ## スポンサー
 
 [![https://www.packyapi.com/register?aff=cliproxyapi](./assets/packycode-en.png)](https://www.packyapi.com/register?aff=cliproxyapi)
