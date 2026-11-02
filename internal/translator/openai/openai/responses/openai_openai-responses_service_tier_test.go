@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 func TestConvertOpenAIResponsesRequestToOpenAIChatCompletions_ForwardsServiceTier(t *testing.T) {
@@ -37,7 +37,7 @@ func TestConvertOpenAIResponsesRequestToOpenAIChatCompletions_ForwardsServiceTie
 			if err != nil {
 				t.Fatalf("ConvertOpenAIResponsesRequestToOpenAIChatCompletions() error = %v", err)
 			}
-			serviceTier := gjson.GetBytes(out, "service_tier")
+			serviceTier := ojson.GetBytesNoCopy(out, "service_tier")
 			if serviceTier.Exists() != tt.wantExists {
 				t.Fatalf("service_tier exists = %v, want %v. Outgoing: %s", serviceTier.Exists(), tt.wantExists, out)
 			}
@@ -80,7 +80,7 @@ func TestConvertOpenAIChatCompletionsResponseToOpenAIResponses_ReportsServedServ
 			out := ConvertOpenAIChatCompletionsResponseToOpenAIResponsesNonStream(
 				context.Background(), "provider-model", nil, []byte(outgoing), []byte(reply), &param)
 
-			serviceTier := gjson.GetBytes(out, "service_tier")
+			serviceTier := ojson.GetBytesNoCopy(out, "service_tier")
 			if serviceTier.Exists() != tt.wantTierExists {
 				t.Fatalf("service_tier exists = %v, want %v. Response: %s", serviceTier.Exists(), tt.wantTierExists, out)
 			}
@@ -101,7 +101,7 @@ func TestConvertOpenAIChatCompletionsResponseToOpenAIResponses_ReportsServedServ
 			}
 
 			var param any
-			var completed gjson.Result
+			var completed ojson.Result
 			for _, line := range chunks {
 				for _, chunk := range ConvertOpenAIChatCompletionsResponseToOpenAIResponses(
 					context.Background(), "provider-model", nil, []byte(outgoing), []byte(line), &param) {
