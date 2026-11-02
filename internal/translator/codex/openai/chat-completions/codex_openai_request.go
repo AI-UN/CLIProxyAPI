@@ -74,7 +74,7 @@ func convertOpenAIRequestToCodex(modelName string, inputRawJSON []byte, stream b
 	} else {
 		out, _ = sjson.SetBytes(out, "reasoning.effort", "medium")
 	}
-	if serviceTier := normalizeCodexServiceTier(root.Get("service_tier")); serviceTier != "" {
+	if serviceTier, ok := translatorcommon.NormalizeCodexServiceTier(root.Get("service_tier")); ok {
 		out, _ = sjson.SetBytes(out, "service_tier", serviceTier)
 	}
 	out, _ = sjson.SetBytes(out, "parallel_tool_calls", gjson.GetBytes(rawJSON, "parallel_tool_calls").Type != gjson.False)
@@ -821,21 +821,6 @@ func buildShortNameMap(names []string) map[string]string {
 		m[n] = uniq
 	}
 	return m
-}
-
-func normalizeCodexServiceTier(result gjson.Result) string {
-	if !result.Exists() || result.Type != gjson.String {
-		return ""
-	}
-
-	switch strings.ToLower(strings.TrimSpace(result.String())) {
-	case "fast", "priority":
-		return "priority"
-	case "ultrafast":
-		return "ultrafast"
-	default:
-		return ""
-	}
 }
 
 // shortenCodexCallIDIfNeeded keeps client tool call IDs within the Codex
