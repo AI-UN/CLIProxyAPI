@@ -5,8 +5,17 @@ import (
 	"strings"
 )
 
-//go:embed claude_bip39_words.txt
-var rawBIP39EnglishWords string
+//go:embed claude_alias_brands.txt
+var rawClaudeAliasBrands string
 
-// claudeMCPAliasEnglishWords contains the standard BIP-39 English wordlist (2048 words).
-var claudeMCPAliasEnglishWords = strings.Fields(rawBIP39EnglishWords)
+//go:embed claude_alias_tlds.txt
+var rawClaudeAliasTLDs string
+
+// claudeMCPAliasBrandWords contains recognizable brand and open-source project
+// names (2048 entries) used for the first half of the virtual server name and
+// the one-word tool ID.
+var claudeMCPAliasBrandWords = strings.Fields(rawClaudeAliasBrands)
+
+// claudeMCPAliasTLDWords contains popular top-level-domain words (38 entries)
+// used for the second half of the virtual server name.
+var claudeMCPAliasTLDWords = strings.Fields(rawClaudeAliasTLDs)
