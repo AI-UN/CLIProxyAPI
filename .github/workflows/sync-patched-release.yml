@@ -33,6 +33,11 @@ env:
   GENERATED_BRANCH: patched-main
   FORCE_SYNC: ${{ github.event_name == 'workflow_dispatch' && inputs.force_sync || false }}
   MANUAL_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
+  # Pin every gh call to this fork. The checkout also has an `upstream`
+  # remote, and gh prefers that remote name when inferring the repository,
+  # so unpinned issue calls would target router-for-me/CLIProxyAPI, where
+  # GITHUB_TOKEN has no write access.
+  GH_REPO: ${{ github.repository }}
 
 jobs:
   sync-patched-release:
@@ -264,8 +269,8 @@ jobs:
           # only fires when a human or a PAT pushes the tag, so dispatch both
           # workflows explicitly. Never hand-push a patched tag and also run
           # this workflow for the same release, or both builds run twice.
-          gh workflow run release.yaml --repo "$GITHUB_REPOSITORY" --ref "$PATCHED_TAG"
-          gh workflow run docker-image.yml --repo "$GITHUB_REPOSITORY" --ref "$PATCHED_TAG"
+          gh workflow run release.yaml --ref "$PATCHED_TAG"
+          gh workflow run docker-image.yml --ref "$PATCHED_TAG"
 
           issue_title="[patched-release-conflict] ${PATCH_SOURCE_BRANCH} conflicts with ${TAG}"
           close_issue_by_title "$issue_title"
