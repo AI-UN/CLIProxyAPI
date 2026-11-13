@@ -76,6 +76,9 @@ var defaultAntigravitySensitiveWords = []string{
 	"system-directive",
 	"system_directive",
 	"RFC 2119",
+	"MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL",
+	"Hermes Agent",
+	"Nous Research",
 }
 
 // antigravityDefaultWordsCacheKey is the config cache key for an executor with
