@@ -34,6 +34,7 @@ docs/*
 !docs/websocket-tunnel.md
 !docs/websocket-tunnel_CN.md
 !docs/antigravity-false-429.md
+!docs/antigravity-gemini-tool-results.md
 AGENTS.md
 CLAUDE.md
 GEMINI.md
