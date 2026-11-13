@@ -1224,7 +1224,10 @@ oauth:
     antigravity:
       # Known coding-agent fingerprints are obfuscated in system instructions by default:
       # "Claude Agent SDK", "system-conventions", "system_conventions",
-      # "system-directive", "system_directive", and "RFC 2119".
+      # "system-directive", "system_directive", "RFC 2119",
+      # "MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL", "Hermes Agent",
+      # and "Nous Research". The keyword enumeration is one literal phrase, not
+      # individually masked keywords.
       # This mitigates content-related false 429s, not genuine quota exhaustion.
       # See docs/antigravity-false-429.md for evidence and override examples.
       # sensitive-words:              # optional: additional words to obfuscate with combining grapheme joiners (U+034F)
