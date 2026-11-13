@@ -1131,8 +1131,12 @@ func TestAntigravityExecutorCountTokensSanitizesGeminiToolHistory(t *testing.T) 
 	if signature := ojson.GetBytes(upstreamBody, "request.contents.1.parts.1.thoughtSignature"); signature.Exists() {
 		t.Fatalf("second sibling bypass was not removed: %s", upstreamBody)
 	}
-	if got := ojson.GetBytes(upstreamBody, "request.contents.2.role").String(); got != "model" {
-		t.Fatalf("functionResponse role = %q, want model; body=%s", got, upstreamBody)
+	if got := ojson.GetBytes(upstreamBody, "request.contents.2.role").String(); got != "user" {
+		t.Fatalf("terminal tool-result role = %q, want user for the Antigravity Gemini boundary; body=%s", got, upstreamBody)
+	}
+	tailParts := ojson.GetBytes(upstreamBody, "request.contents.2.parts").Array()
+	if len(tailParts) != 3 || tailParts[len(tailParts)-1].Get("text").String() != "read\nread" {
+		t.Fatalf("terminal tool-result label missing; parts=%s body=%s", ojson.GetBytes(upstreamBody, "request.contents.2.parts").Raw, upstreamBody)
 	}
 	if got := ojson.GetBytes(upstreamBody, "request.contents.2.parts.0.functionResponse.id").String(); got != "call-1" {
 		t.Fatalf("first functionResponse.id = %q, want call-1; body=%s", got, upstreamBody)

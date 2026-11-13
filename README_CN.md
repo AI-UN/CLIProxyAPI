@@ -64,6 +64,7 @@ CLIProxyAPI 是一个为 CLI 提供 OpenAI/Gemini/Claude/Codex/Grok 兼容 API �
 - Codex 中未知但非空的 `service_tier` 字符串会继续转发，不会被静默删除。OpenAI Responses 会透传请求档位，并在上游提供实际服务档位时返回该值。
 - 空字符串、`null` 或仅含空白字符的 thinking level 视为未指定。保留 Gemini 显式 thinking budget，以及模型后缀的优先级。
 - Antigravity 默认用 U+034F 混淆九项已知的 OMP/RFC、Claude Agent SDK 和 Hermes/Nous 系统指令指纹，缓解内容相关的假性 429。保留对话内容、工具、用户 payload 规则的最终优先级及真实限额处理。详见[兼容说明](docs/antigravity-false-429.md)（英文）。
+- Antigravity Gemini 请求若以纯工具结果轮结尾，会在上游侧为该末尾轮加标签：角色改为 `user`，并附加一个写明被回答函数名的文本部件；适用于整个 Antigravity Gemini 系列（含 Gemini 4 Argon 与 Gemini 3.8 Flash）。历史轮次、ID、思考签名以及文本/媒体混合轮均保持不变；推理回放快照在加标签前采集，多轮缓存匹配照常工作。用户 payload 规则仍在最后生效。详见[工具结果边界说明](docs/antigravity-gemini-tool-results.md)（英文）。
 
 更新这些补丁时，应以当前上游 `main` 为基线重建 `patched`，仅移植上游尚未实现的差异。源分支跟踪 `origin`；请显式 fetch `upstream` 并 rebase 工作分支，不要在 `patched` 上执行 `git pull`。
 

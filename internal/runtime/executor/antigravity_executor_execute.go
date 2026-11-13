@@ -128,7 +128,9 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, auth *cliproxyauth.Au
 	if replayScope.valid() {
 		replayRequestPayload, _ = antigravityReplayRequestEnvelopeFromDoc(doc)
 	}
-
+	// The snapshot above keeps the pre-label historical shape so later turns still
+	// match it; the terminal label is wire-only.
+	ensureAntigravityGeminiToolResultBoundaryDoc(baseModel, doc)
 	httpReq, requestPayload, errReq := e.buildRequestDoc(ctx, auth, token, baseModel, doc, false, opts.Alt, baseURL, helps.DerivedAntigravitySessionID(opts.Metadata, req.Metadata))
 	if errReq != nil {
 		err = errReq
@@ -267,6 +269,17 @@ func (e *AntigravityExecutor) executeCompaction(ctx context.Context, auth *clipr
 	}, nil
 }
 
+// ensureAntigravityGeminiToolResultBoundaryDoc labels a terminal pure tool-result
+// turn for the Gemini-family targets Antigravity serves. The check reuses the
+// reasoning-replay family predicate, so Claude targets stay untouched even though
+// they are routed through the same send paths.
+func ensureAntigravityGeminiToolResultBoundaryDoc(modelName string, doc *ojson.Doc) bool {
+	if doc == nil || !antigravityUsesReasoningReplayCache(modelName) {
+		return false
+	}
+	return helps.EnsureAntigravityGeminiToolResultBoundaryDoc(doc)
+}
+
 // executeClaudeNonStream performs a claude non-streaming request to the Antigravity API.
 func (e *AntigravityExecutor) executeClaudeNonStream(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (resp cliproxyexecutor.Response, err error) {
 	baseModel := thinking.ParseSuffix(req.Model).ModelName
@@ -350,6 +363,7 @@ func (e *AntigravityExecutor) executeClaudeNonStream(ctx context.Context, auth *
 	if replayScope.valid() {
 		replayRequestPayload, _ = antigravityReplayRequestEnvelopeFromDoc(doc)
 	}
+	ensureAntigravityGeminiToolResultBoundaryDoc(baseModel, doc)
 	httpReq, requestPayload, errReq := e.buildRequestDoc(ctx, auth, token, baseModel, doc, true, opts.Alt, baseURL, helps.DerivedAntigravitySessionID(opts.Metadata, req.Metadata))
 	if errReq != nil {
 		err = errReq
