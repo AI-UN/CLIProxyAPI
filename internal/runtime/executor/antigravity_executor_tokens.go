@@ -86,6 +86,7 @@ func (e *AntigravityExecutor) CountTokens(ctx context.Context, auth *cliproxyaut
 		return cliproxyexecutor.Response{}, errReplay
 	}
 	ensureAntigravityGeminiLeadingUserContentDoc(baseModel, doc)
+	ensureAntigravityGeminiToolResultBoundaryDoc(baseModel, doc)
 
 	populateAntigravityCountTokensModelDoc(doc, baseModel)
 
