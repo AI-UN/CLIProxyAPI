@@ -288,7 +288,8 @@ func TestAntigravityStreamObfuscatesSensitiveSystemInstruction(t *testing.T) {
 
 	body := <-captured
 	got := ojson.GetBytes(body, "request.systemInstruction.parts.0.text").String()
-	want := "You are H\u034Fermes Agent, an intelligent AI assistant created by N\u034Fous R\u034Fesearch."
+	// The built-in "Hermes Agent" fingerprint outranks the configured "Hermes", masking both subwords.
+	want := "You are H\u034Fermes A\u034Fgent, an intelligent AI assistant created by N\u034Fous R\u034Fesearch."
 	if got != want {
 		t.Fatalf("system instruction = %q, want %q; body=%s", got, want, body)
 	}
