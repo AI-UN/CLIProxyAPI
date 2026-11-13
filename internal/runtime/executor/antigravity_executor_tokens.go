@@ -57,6 +57,7 @@ func (e *AntigravityExecutor) CountTokens(ctx context.Context, auth *cliproxyaut
 		return cliproxyexecutor.Response{}, errReplay
 	}
 	ensureAntigravityGeminiLeadingUserContentDoc(selection.ID, doc)
+	ensureAntigravityGeminiToolResultBoundaryDoc(selection.ID, doc)
 
 	if selection.MaxOutputTokens > 0 {
 		_ = doc.Set("request.model", formatAntigravityCountTokensModel(selection.ID))
