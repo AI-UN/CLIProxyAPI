@@ -24,7 +24,8 @@ const ompSystemConventionsOpening = "<system-conventions>\nRFC 2119: MUST, REQUI
 // ompRFC2119KeywordsLine is the newer wording reported in oh-my-pi #18706.
 const ompRFC2119KeywordsLine = "RFC 2119 keywords: MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. `NEVER` = `MUST NOT`; `AVOID` = `SHOULD NOT`."
 
-const ompSystemPromptOpening = ompSystemConventionsOpening + "\n" + ompRFC2119KeywordsLine
+const ompSystemPromptOpening = ompSystemConventionsOpening + "\n" + ompRFC2119KeywordsLine +
+	"\nYou are Hermes Agent, an intelligent AI assistant created by Nous Research."
 
 func antigravityDefaultsAuth(baseURL string) *cliproxyauth.Auth {
 	return &cliproxyauth.Auth{
@@ -131,6 +132,31 @@ func TestAntigravityDefaultSensitiveWordsObfuscateWithoutConfig(t *testing.T) {
 	}
 }
 
+func TestAntigravityDefaultSensitiveWordsComplementaryPhrases(t *testing.T) {
+	for _, tc := range []struct {
+		text string
+		want string
+	}{
+		{"MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL", "M\u034FUST, R\u034FEQUIRED, S\u034FHOULD, R\u034FECOMMENDED, M\u034FAY, O\u034FPTIONAL"},
+		{"Hermes Agent", "H\u034Fermes A\u034Fgent"},
+		{"Nous Research", "N\u034Fous R\u034Fesearch"},
+		{"MUST preserve individual keywords and SHOULD remain readable.", "MUST preserve individual keywords and SHOULD remain readable."},
+	} {
+		t.Run(tc.text, func(t *testing.T) {
+			doc := ojson.NewDocString(fmt.Sprintf(`{"request":{"systemInstruction":{"parts":[{"text":%q}]},"contents":[{"role":"user","parts":[{"text":%q}]}],"tools":[{"functionDeclarations":[{"name":"probe","description":%q}]}]}}`, tc.text, tc.text, tc.text))
+			NewAntigravityExecutor(nil).obfuscateSensitiveWordsDoc(doc)
+			if got := doc.Get("request.systemInstruction.parts.0.text").String(); got != tc.want {
+				t.Fatalf("system instruction = %q, want %q", got, tc.want)
+			}
+			for _, path := range []string{"request.contents.0.parts.0.text", "request.tools.0.functionDeclarations.0.description"} {
+				if got := doc.Get(path).String(); got != tc.text {
+					t.Fatalf("%s = %q, want unchanged %q", path, got, tc.text)
+				}
+			}
+		})
+	}
+}
+
 // TestAntigravityDefaultSensitiveWordsCaseInsensitiveAndMerged covers matching
 // case variants and adding configured words on top of the defaults.
 func TestAntigravityDefaultSensitiveWordsCaseInsensitiveAndMerged(t *testing.T) {
@@ -138,11 +164,11 @@ func TestAntigravityDefaultSensitiveWordsCaseInsensitiveAndMerged(t *testing.T) 
 	cfg := &config.Config{Antigravity: config.AntigravityConfig{SensitiveWords: words}}
 	executor := NewAntigravityExecutor(cfg)
 	systemText := "claude agent sdk / SYSTEM-CONVENTIONS / system_conventions / System-Directive / " +
-		"SYSTEM_DIRECTIVE / rfc 2119 / RFC 2119 keywords: MUST / acmewidget / unrelated text"
+		"SYSTEM_DIRECTIVE / rfc 2119 / RFC 2119 keywords: MUST / hermes agent / NOUS RESEARCH / must, required, should, recommended, may, optional / acmewidget / unrelated text"
 	payload := []byte(fmt.Sprintf(`{"request":{"systemInstruction":{"parts":[{"text":%q}]}}}`, systemText))
 
 	got := ojson.GetBytes(executor.obfuscateSensitiveWords(payload), "request.systemInstruction.parts.0.text").String()
-	for _, phrase := range []string{"claude agent sdk", "SYSTEM-CONVENTIONS", "system_conventions", "System-Directive", "SYSTEM_DIRECTIVE", "rfc 2119", "RFC 2119", "acmewidget"} {
+	for _, phrase := range []string{"claude agent sdk", "SYSTEM-CONVENTIONS", "system_conventions", "System-Directive", "SYSTEM_DIRECTIVE", "rfc 2119", "RFC 2119", "hermes agent", "NOUS RESEARCH", "must, required, should, recommended, may, optional", "acmewidget"} {
 		if strings.Contains(got, phrase) {
 			t.Fatalf("system instruction retained raw %q: %q", phrase, got)
 		}
