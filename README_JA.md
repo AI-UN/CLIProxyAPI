@@ -64,6 +64,7 @@ CLIProxyAPI は、CLI向けのOpenAI/Gemini/Claude/Codex/Grok互換APIインタ�
 - Codex の未知の空でない `service_tier` 文字列は、黙って削除せずに転送します。OpenAI Responses は要求されたティアを転送し、上流が実際に提供したティアを報告した場合はその値を返します。
 - 空文字列、`null`、空白のみの thinking level は未指定として扱います。Gemini の明示的な thinking budget とモデル接尾辞の優先順位は維持します。
 - Antigravity は、既知の OMP/RFC、Claude Agent SDK、Hermes/Nous のシステム指示フィンガープリント9項目をデフォルトで U+034F により難読化し、内容に起因する誤った429を軽減します。会話内容、ツール、ユーザーの payload ルールの最終優先権、実際のクォータ処理は維持します。[互換性の詳細](docs/antigravity-false-429.md)（英語）を参照してください。
+- Antigravity Gemini のリクエストが純粋なツール結果ターンで終わる場合、その末尾ターンを上流向けにラベル付けします。ロールは `user` になり、応答済みの関数名を示す text パートを付加し、Antigravity Gemini 系全体（Gemini 4 Argon、Gemini 3.8 Flash を含む）に適用します。過去のターン、ID、思考シグネチャ、テキストとメディアが混在するターンは変更せず、推論リプレイのスナップショットはラベル付与の前に取得するため、マルチターンのキャッシュ照合はそのまま機能します。ユーザーの payload ルールは引き続き最後に適用されます。詳細は[ツール結果境界の説明](docs/antigravity-gemini-tool-results.md)（英語）を参照してください。
 
 これらのパッチを更新する際は、現在の上流 `main` を基準に `patched` を再構築し、上流でまだ実装されていない差分だけを移植してください。作業ブランチは `origin` を追跡します。`upstream` を明示的に fetch して作業ブランチを rebase し、`patched` で `git pull` しないでください。
 
