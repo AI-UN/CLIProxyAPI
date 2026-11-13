@@ -169,6 +169,8 @@ PackyCodeは当ソフトウェアのユーザーに特別割引を提供して�
 
 CLIProxyAPIガイド：[https://help.router-for.me/](https://help.router-for.me/)
 
+Antigravity は、誤解を招く 429 エラーを起こし得る既知のコーディングエージェントのシステム指示フィンガープリントをデフォルトで処理します。適用範囲、設定、制限は [Antigravity false-429 互換性](docs/antigravity-false-429.md)（英語）を参照してください。
+
 ## 管理API
 
 [MANAGEMENT_API.md](https://help.router-for.me/management/api)を参照

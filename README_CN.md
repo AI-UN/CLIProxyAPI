@@ -174,6 +174,8 @@ PackyCode 为本软件用户提供了特别优惠：使用<a href="https://www.p
 
 CLIProxyAPI 用户手册： [https://help.router-for.me/](https://help.router-for.me/cn/)
 
+Antigravity 默认处理可能触发误导性 429 错误的已知编码 Agent 系统指令指纹。适用范围、配置及限制见 [Antigravity false-429 兼容说明](docs/antigravity-false-429.md)（英文）。
+
 ## 管理 API 文档
 
 请参见 [MANAGEMENT_API_CN.md](https://help.router-for.me/cn/management/api)

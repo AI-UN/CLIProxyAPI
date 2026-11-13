@@ -68,16 +68,37 @@ func NewAntigravityExecutor(cfg *config.Config) *AntigravityExecutor {
 	return &AntigravityExecutor{cfg: cfg}
 }
 
+// These reported system-instruction fingerprints can trigger false 429s (#5751, #6280).
+var defaultAntigravitySensitiveWords = []string{
+	"Claude Agent SDK",
+	"system-conventions",
+	"system_conventions",
+	"system-directive",
+	"system_directive",
+	"RFC 2119",
+}
+
+// antigravityDefaultWordsCacheKey is the config cache key for an executor with
+// no configured words or replacements; computed once so default-only requests
+// do not rebuild it.
+var antigravityDefaultWordsCacheKey = helps.SensitiveWordConfigCacheKey(nil, nil)
+
 func (e *AntigravityExecutor) getSensitiveWordMatcher() *helps.SensitiveWordMatcher {
-	if e == nil || e.cfg == nil {
+	if e == nil {
 		return nil
 	}
-	words := e.cfg.Antigravity.SensitiveWords
-	replacements := e.cfg.Antigravity.SensitiveWordsReplace
-	if len(words) == 0 && len(replacements) == 0 {
-		return nil
+	var words []string
+	var replacements map[string]string
+	if e.cfg != nil {
+		words = e.cfg.Antigravity.SensitiveWords
+		replacements = e.cfg.Antigravity.SensitiveWordsReplace
 	}
-	key := helps.SensitiveWordConfigCacheKey(words, replacements)
+	// Defaults are static, so the cache key only needs the configured part;
+	// merging onto them happens once per key instead of on every request.
+	key := antigravityDefaultWordsCacheKey
+	if len(words) > 0 || len(replacements) > 0 {
+		key = helps.SensitiveWordConfigCacheKey(words, replacements)
+	}
 	e.matcherMu.RLock()
 	if e.lastWordsKey == key {
 		m := e.cachedMatcher
@@ -92,7 +113,10 @@ func (e *AntigravityExecutor) getSensitiveWordMatcher() *helps.SensitiveWordMatc
 		return e.cachedMatcher
 	}
 	e.lastWordsKey = key
-	e.cachedMatcher = helps.BuildAntigravitySensitiveWordMatcher(words, replacements)
+	merged := make([]string, 0, len(defaultAntigravitySensitiveWords)+len(words))
+	merged = append(merged, defaultAntigravitySensitiveWords...)
+	merged = append(merged, words...)
+	e.cachedMatcher = helps.BuildAntigravitySensitiveWordMatcher(merged, replacements)
 	return e.cachedMatcher
 }
 

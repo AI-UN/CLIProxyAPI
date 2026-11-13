@@ -1222,10 +1222,16 @@ oauth:
 
     # Antigravity provider behavior.
     antigravity:
-      # sensitive-words:              # optional: words to obfuscate with combining grapheme joiners (U+034F) in system instructions
+      # Known coding-agent fingerprints are obfuscated in system instructions by default:
+      # "Claude Agent SDK", "system-conventions", "system_conventions",
+      # "system-directive", "system_directive", and "RFC 2119".
+      # This mitigates content-related false 429s, not genuine quota exhaustion.
+      # See docs/antigravity-false-429.md for evidence and override examples.
+      # sensitive-words:              # optional: additional words to obfuscate with combining grapheme joiners (U+034F)
       #   - "API"
       #   - "proxy"
-      # sensitive-words-replace:      # optional: literal sensitive-word replacements ("target": "replacement") in system instructions
+      # sensitive-words-replace:      # optional: literal replacements, taking precedence over default and additional words
+      #   "RFC 2119": "RFC 2119"      # identity replacement preserves this phrase unchanged (may restore the false 429)
       #   "You are Codex, an agent based on GPT-5.": "You are a helpful coding assistant."
       # connection-pool:              # optional: upstream HTTP connection pool settings
       #   enabled: false             # whether to enable connection pooling (default: false)
