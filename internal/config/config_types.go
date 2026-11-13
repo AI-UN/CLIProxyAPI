@@ -246,10 +246,10 @@ type ProxyConnectionPoolConfig struct {
 
 // AntigravityConfig configures provider-wide Antigravity request behavior.
 type AntigravityConfig struct {
-	// SensitiveWords is a list of words to obfuscate with invisible combining grapheme joiners in system instructions.
+	// SensitiveWords adds words to the built-in coding-agent fingerprints obfuscated with invisible combining grapheme joiners in system instructions.
 	SensitiveWords []string `yaml:"sensitive-words,omitempty" json:"sensitive-words,omitempty"`
 
-	// SensitiveWordsReplace maps sensitive words or phrases to literal replacements in system instructions.
+	// SensitiveWordsReplace maps phrases to literal replacements, taking precedence over built-in and additional sensitive words.
 	SensitiveWordsReplace map[string]string `yaml:"sensitive-words-replace,omitempty" json:"sensitive-words-replace,omitempty"`
 
 	// ConnectionPool configures upstream HTTP connection pooling behavior for Antigravity.
