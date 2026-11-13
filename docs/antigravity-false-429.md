@@ -35,11 +35,58 @@ Repository and PR states below were checked on 2026-11-13. Reported live results
 | Fingerprint warning in [CPA PR #5790](https://github.com/router-for-me/CLIProxyAPI/pull/5790) | Makes known unmasked text discoverable; keeps payload changes opt-in | Open; diagnostic only, does not repair requests or establish the cause of an arbitrary 429 |
 | v8 configuration automation in [ai-launcher PR #14](https://github.com/Ak1Ena/ai-launcher/pull/14), commit [`506abbeaf896`](https://github.com/Ak1Ena/ai-launcher/commit/506abbeaf8966e53d4168c811638a3ee5f2fae3c) | Merged; applies the existing mechanism during setup and preserves a nonempty user list | Requires that launcher and the v8 config API; preserving an incomplete user list can leave the trigger unhandled |
 | U+034F per-subword obfuscation and literal replacement in upstream commit [`9a7e1e6b4127`](https://github.com/router-for-me/CLIProxyAPI/commit/9a7e1e6b412747729dedecefd7e23bd2e3ee1d3d), addressing [CPA #7428](https://github.com/router-for-me/CLIProxyAPI/issues/7428) | Already on this patch's upstream base; handles the newer reported U+200B limitation and supports precise identity replacement | Still opt-in upstream: an empty configuration creates no matcher. This is the residual gap addressed here |
-| Independent proxy masking in [antigravity-claude-proxy-go PR #156](https://github.com/gustavokch/antigravity-claude-proxy-go/pull/156), commit [`4917878f311b`](https://github.com/gustavokch/antigravity-claude-proxy-go/commit/4917878f311be581a32640348947b8cbc001793f) | Recent independent report: U+034F masking changed the captured OMP request from 429 to successful completion; preserves the native identity block | Open, not deployed in the report; masks a broader set including the keyword list and Hermes identity, with separate tri-state configuration. Its retry/recovery changes are unrelated and are not ported here |
+| Independent proxy masking in [antigravity-claude-proxy-go PR #156](https://github.com/gustavokch/antigravity-claude-proxy-go/pull/156), commit [`4917878f311b`](https://github.com/gustavokch/antigravity-claude-proxy-go/commit/4917878f311be581a32640348947b8cbc001793f) | Recent independent report: U+034F masking changed the captured OMP request from 429 to successful completion; preserves the native identity block | Open, not deployed in the report; its phrase set is now covered by this fork's defaults apart from `Claude Agent SDK`, which only this fork adds; separate tri-state configuration. Its retry/recovery changes are unrelated and are not ported here |
+
+### Detailed comparison with antigravity-claude-proxy-go #156
+
+This comparison pins [PR #156](https://github.com/gustavokch/antigravity-claude-proxy-go/pull/156) to head `4917878f311be581a32640348947b8cbc001793f` and was first written against this fork at `e08a46343f2ed5952dda61914fcbf1d5bace4e97`, where only six default phrases were present. The coverage table reflects the fork's **current** defaults; the historical gap is noted below it. The PR is still open. It contains two separate commits: [`d1e6746`](https://github.com/gustavokch/antigravity-claude-proxy-go/commit/d1e674643632b5baf74a98405603c9d0568cabd0) changes recovery/error delivery; [`4917878`](https://github.com/gustavokch/antigravity-claude-proxy-go/commit/4917878f311be581a32640348947b8cbc001793f) adds masking.
+
+With both mask sets extended, the defaults now overlap almost completely:
+
+| Coverage | Phrases |
+| --- | --- |
+| Both (eight) | `RFC 2119`, `system-conventions`, `system_conventions`, `system-directive`, `system_directive`, `MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL`, `Hermes Agent`, `Nous Research` |
+| Only #156 | none |
+| Only this fork | `Claude Agent SDK` |
+
+The [pinned mask implementation](https://github.com/gustavokch/antigravity-claude-proxy-go/blob/4917878f311be581a32640348947b8cbc001793f/internal/format/system_mask.go#L11-L80) explicitly ports CLIProxyAPI's algorithm: case-insensitive literal matching, longest phrase first, and U+034F after the first rune of each alphanumeric subword. It is not a new obfuscation algorithm.
+
+Historically the gap mattered for the current OMP line: at `e08a4634` our default masked only the two subwords in `RFC 2119`, while #156 also masked the six subwords in the keyword enumeration. The fork now masks both, so neither side covers more of that line. Its broader phrase coverage was a plausible extra safeguard rather than proved necessity: the reported successful full-request A/B changed the complete configured mask, not one phrase at a time, so that evidence does not show keyword-enumeration masking is required in addition to masking `RFC 2119`.
+
+The extension is therefore a low-cost parity alignment with an independently reported mask, not a verified requirement.
+
+| Boundary | #156 | This fork |
+| --- | --- | --- |
+| Configuration | Absent/null uses defaults; `[]` disables; a nonempty list replaces defaults | Configured words are additive; empty list keeps defaults |
+| Exact replacement | Mask only; no phrase-to-replacement map in `SystemMask` | Existing `sensitive-words-replace` supports neutral rewrites, deletion, and identity opt-out |
+| Reconfiguration | Atomically swaps a compiled mask at startup/config save | Existing per-executor matcher cache keys configured words/replacements |
+| Rewritten text | Client system parts only, before joining with native identity text | Translated system-instruction text only, before final user payload rules |
+| Native identity | Existing builder prepends its agy identity and an ignore-copy; new mask deliberately excludes both | This patch adds no identity blocks or official-client envelope changes |
+
+Sources: [configuration semantics](https://github.com/gustavokch/antigravity-claude-proxy-go/blob/4917878f311be581a32640348947b8cbc001793f/internal/config/antigravity.go#L5-L19), [builder and atomic mask](https://github.com/gustavokch/antigravity-claude-proxy-go/blob/4917878f311be581a32640348947b8cbc001793f/internal/format/builder.go#L22-L69), and this fork's `AntigravityExecutor.getSensitiveWordMatcher` / `helps.ObfuscateSensitiveWordsInSystemInstructionDoc`.
+
+The external builder also strips lines containing `x-anthropic-billing-header`, injects native identity text, derives native-looking request/session metadata, and manages output limits. These are existing builder behaviors, **not additional innovations introduced by #156**. CLIProxyAPI already filters Claude attribution system blocks on its Claude-to-Antigravity path; the rules are not identical (block-prefix filtering versus case-insensitive line filtering). Neither difference justifies replacing system instructions or porting the other builder wholesale.
+
+The three complementary #156 phrases are now part of this fork's built-in defaults, so no configuration is needed to get them. An empty or absent `sensitive-words` list keeps the full set active. The full keyword enumeration is one literal phrase, not six globally masked words; punctuation/spacing changes can prevent a match. Broader masking changes more system text and is not a guarantee against normalization or future filtering. To opt a phrase out, map it to itself with `sensitive-words-replace`; see the configuration section. No deployment settings were changed during this comparison.
+
+
+#### Recovery and error delivery are a separate change
+
+The first commit in #156 adds a request-local recovery window capped at `min(10s, maxWait)`. It is armed after certain failures or blocked account selection, shared across subsequent retries, and disarmed before the first upstream event is forwarded. A recovery delay that would consume the remaining budget is refused instead of hidden inside a long wait. Healthy initial attempts do not start this timer. See the [pinned dispatcher](https://github.com/gustavokch/antigravity-claude-proxy-go/blob/4917878f311be581a32640348947b8cbc001793f/internal/accounts/dispatcher.go#L447-L641) and [recovery window](https://github.com/gustavokch/antigravity-claude-proxy-go/blob/4917878f311be581a32640348947b8cbc001793f/internal/accounts/recovery.go#L27-L127).
+
+This is not safe to copy directly into CLIProxyAPI: after the window is armed, its cancellation context also covers `StreamGenerateContent`. The timer can cancel a retry whose connection is established but has not delivered its first event. CLIProxyAPI's repository policy forbids that post-connection timeout. Limiting scheduler waits or admission to another attempt is a different design from timing out a connected request.
+
+The same PR improves failure visibility: typed HTTP 429 and retry advice before response commitment; a classified SSE error after commitment; propagation of empty-stream completion errors; and stopping when downstream writes or flushes fail. Current CLIProxyAPI already has typed streaming errors, incomplete-stream detection, and trusted retry-header handling. The patch we implemented intentionally leaves all of those mechanisms unchanged. These are largely parity improvements for that proxy, not missing functionality proved by the false-429 report.
+
+One narrower item merits a separate regression investigation: this checkout's Claude SSE handler ignores `Write` errors in `sdk/api/handlers/claude/code_handlers.go` and does not supply the error-returning flush hook used by the OpenAI Responses handler. That suggests it can keep consuming until request cancellation after a downstream write fails. This is source-based inference, not a reproduced defect; no fix or test was added during this comparison.
+
+The [latest review comment on the pinned head](https://github.com/gustavokch/antigravity-claude-proxy-go/pull/156#issuecomment-6839498084) reports three outstanding problems: credential/project-discovery retry paths that do not arm the window, retry advice that ignores a longer session-pin constraint when shared throttling exists, and malformed sensitive-word configuration being saved before rejection. No later commit was present when checked. These are external reviewer reports, not locally reproduced results.
+
+The author reports live success for one captured OMP request, but the PR still lists deployed interactive OMP/tool-use and requesting-client controlled-429 visibility as open acceptance gates. That is stronger evidence than mocks alone, not proof that every added phrase is necessary or that the whole recovery patch is production-ready. No source code, deployment configuration, or refs were changed for this comparison; no provider calls or test/build reruns were performed.
 
 ## Fork behavior
 
-This patch ports the six default phrases from CPA PR #6280 onto upstream main `1aaf56bc6a0fc6fce19049ba7ae8554c882304a6`:
+This patch ports the six default phrases from CPA PR #6280 onto upstream main `1aaf56bc6a0fc6fce19049ba7ae8554c882304a6`, then extends the list with the three phrases independently used by antigravity-claude-proxy-go #156. Nine defaults are active:
 
 - `Claude Agent SDK`
 - `system-conventions`
@@ -47,6 +94,11 @@ This patch ports the six default phrases from CPA PR #6280 onto upstream main `1
 - `system-directive`
 - `system_directive`
 - `RFC 2119`
+- `MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL`
+- `Hermes Agent`
+- `Nous Research`
+
+The keyword enumeration is matched as one literal phrase; `MUST`, `SHOULD`, and the other keywords are not masked where they appear alone. The six-phrase set was the fork's initial state at `e08a4634`; the extra three are the later extension described above.
 
 The existing Antigravity matcher inserts U+034F after the first rune of each matching alphanumeric subword. Matching is case-insensitive. Only text in `request.systemInstruction` or `request.system_instruction` is processed; ordinary conversation content and tool schemas are not rewritten. The rules are literal phrase matches, not a reconstruction of Google's filter.
 
@@ -58,7 +110,7 @@ There is no change to OAuth, project discovery, endpoints, `requestType`, retrie
 
 ## Configuration
 
-On this fork, the six defaults need no configuration. An empty or absent `sensitive-words` list does **not** disable built-in handling.
+On this fork, the nine defaults need no configuration. An empty or absent `sensitive-words` list does **not** disable built-in handling.
 
 On an unpatched upstream release with the current matcher, the corresponding manual workaround uses the v8 layout:
 
@@ -74,6 +126,9 @@ oauth:
         - "system-directive"
         - "system_directive"
         - "RFC 2119"
+        - "MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL"
+        - "Hermes Agent"
+        - "Nous Research"
 ```
 
 Merge the provider settings into the existing configuration; do not replace the whole file. Legacy-layout files place `antigravity` at the top level instead of under `oauth.providers`.
