@@ -64,6 +64,7 @@ Important: do not commit manually to automated branches such as `patched-main` o
 - Claude uses natural MCP alias words. Wrapped full caller MCP names are recovered only when no client alias candidates match; ambiguous client aliases remain unchanged. Unresolved or ambiguous response aliases are forwarded unchanged without choosing a different tool, with structured diagnostics. Upstream tool-change and thread-continuation handling are preserved; missing continuation state remains an error.
 - Unknown nonblank Codex `service_tier` strings are forwarded instead of silently removed. OpenAI Responses forwards the requested tier and reports the provider-served tier when supplied.
 - Blank, null, or whitespace-only thinking levels are treated as unspecified. Explicit Gemini thinking budgets and model-suffix precedence are preserved.
+- Antigravity obfuscates nine known OMP/RFC, Claude Agent SDK, and Hermes/Nous system fingerprints with U+034F by default to mitigate content-related false 429s. Conversation content, tools, final user payload rules, and genuine quota handling are preserved. See [compatibility details](docs/antigravity-false-429.md).
 
 When updating these patches, rebuild `patched` on current upstream `main` and port only the differences not already implemented upstream. Source branches track `origin`; fetch `upstream` explicitly and rebase working branches instead of running `git pull` on `patched`.
 
